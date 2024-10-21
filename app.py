@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import os
 
 # Set page title
@@ -71,16 +70,10 @@ if selected_file:
     # Create a line plot of Total Distance over time
     st.header("Total Distance Over Time")
     st.write("""
-    This line plot shows how the total distance traveled by the EV changes over time. It can help 
+    This line chart shows how the total distance traveled by the EV changes over time. It can help 
     identify trends or patterns in vehicle usage.
     """)
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(pd.to_datetime(df['Date']), df['Total Distance'])
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Total Distance')
-    ax.set_title('Total Distance Over Time')
-    plt.xticks(rotation=45)
-    st.pyplot(fig)
+    st.line_chart(df.set_index('Date')['Total Distance'])
 
     # Create a scatter plot of Total Energy Consumption vs Total Distance
     st.header("Total Energy Consumption vs Total Distance")
@@ -89,12 +82,7 @@ if selected_file:
     help visualize the relationship between distance and energy use, potentially revealing insights 
     about the vehicle's efficiency.
     """)
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.scatter(df['Total Distance'], df['Total Energy Consumption'])
-    ax.set_xlabel('Total Distance')
-    ax.set_ylabel('Total Energy Consumption')
-    ax.set_title('Total Energy Consumption vs Total Distance')
-    st.pyplot(fig)
+    st.scatter_chart(df, x='Total Distance', y='Total Energy Consumption')
 
     # Display correlation matrix
     st.header("Correlation Matrix")
@@ -117,12 +105,7 @@ if selected_file:
     with col2:
         y_column = st.selectbox("Select Y-axis", df.columns)
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.scatter(df[x_column], df[y_column])
-    ax.set_xlabel(x_column)
-    ax.set_ylabel(y_column)
-    ax.set_title(f'{y_column} vs {x_column}')
-    st.pyplot(fig)
+    st.scatter_chart(df, x=x_column, y=y_column)
 
 else:
     st.write("""
