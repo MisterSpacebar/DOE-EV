@@ -59,8 +59,8 @@ try:
         reference_data = json.load(json_file)
 
     # Debugging: Print the first few items in reference_data
-    st.write("First few items in reference data:")
-    st.write(reference_data[:5])
+    # st.write("First few items in reference data:")
+    # st.write(reference_data[:5])
 
 except FileNotFoundError as e:
     st.error(f"Error: {e}. Please check the file paths and try again.")
@@ -86,23 +86,10 @@ if selected_file:
     df = convert_time_to_hours(df)  # Convert time columns to hours
 
     # Extract vehicle ID from filename
-    vehicle_id = selected_file.split('.')[
-        1]  # Assuming the vehicle ID is always the second element when splitting by '.'
-
-    # Debugging: Print the extracted vehicle ID
-    st.write(f"Extracted Vehicle ID: {vehicle_id}")
+    vehicle_code = selected_file.split('.')[1]  # This extracts the EV code (e.g., "ev190")
 
     # Look up additional information in the reference data
-    vehicle_info = next((item for item in reference_data if item['Vehicle ID'] == vehicle_id), None)
-
-    # Debugging: Print the result of the lookup
-    if vehicle_info:
-        st.write("Found vehicle info:")
-        st.write(vehicle_info)
-    else:
-        st.write(f"No vehicle info found for ID: {vehicle_id}")
-        st.write("Available Vehicle IDs in reference data:")
-        st.write([item['Vehicle ID'] for item in reference_data[:10]])  # Show first 10 for brevity
+    vehicle_info = next((item for item in reference_data if item['Vehicle ID'].lower() == vehicle_code.lower()), None)
 
     st.header("Vehicle Information")
     if vehicle_info is not None:
@@ -111,25 +98,63 @@ if selected_file:
             st.write(f"**Vehicle ID:** {vehicle_info['Vehicle ID']}")
             st.write(f"**Model Year:** {vehicle_info['Model Year']}")
             st.write(f"**Manufacturer:** {vehicle_info['Manufacturer']}")
-        with col2:
             st.write(f"**Model Name:** {vehicle_info['Model Name']}")
+        with col2:
             st.write(f"**Weight Class:** {vehicle_info['Weight Class']}")
             st.write(f"**Battery Chemistry:** {vehicle_info['Battery Chemistry']}")
-        with col3:
             st.write(f"**Rated Energy:** {vehicle_info['Rated Energy']} kWh")
             st.write(f"**Max Charge Rate:** {vehicle_info['Max Charge Rate']} kW")
+        with col3:
             st.write(f"**State:** {vehicle_info['State']}")
+            st.write(f"**Body Style:** {vehicle_info['Body Style']}")
+            st.write(f"**Sector:** {vehicle_info['Sector']}")
+            st.write(f"**Vocation:** {vehicle_info['Vocation']}")
     else:
-        st.write("No additional information available for this vehicle.")
+        st.write(f"No additional information available for vehicle code: {vehicle_code}")
+
+    # Debugging information (you can remove this later)
+    st.write(f"Debug - Extracted Vehicle Code: {vehicle_code}")
+    st.write(f"Debug - Matched Vehicle Info: {vehicle_info is not None}")
 
 
     st.header("Data Preview")
     st.write("Below is a preview of the first few rows of the dataset.")
     st.write(df.head())
 
+    # st.header("Summary Statistics")
+    # st.write("This table shows summary statistics for the numerical columns in the dataset.")
+    # st.write(df.describe())
+
     st.header("Summary Statistics")
-    st.write("This table shows summary statistics for the numerical columns in the dataset.")
-    st.write(df.describe())
+    st.write(
+        "This table shows summary statistics for the numerical columns in the dataset")
+
+    # Separate numeric and non-numeric columns
+    numeric_columns = df.select_dtypes(include=['int64', 'float64']).columns
+    non_numeric_columns = df.select_dtypes(exclude=['int64', 'float64']).columns
+
+    if len(numeric_columns) > 0:
+        # Calculate summary statistics for numeric columns
+        summary_stats = df[numeric_columns].describe()
+
+        # Add median (50% is already included in describe())
+        summary_stats.loc['median'] = summary_stats.loc['50%']
+
+        # Calculate variance
+        summary_stats.loc['variance'] = df[numeric_columns].var()
+
+        # Reorder rows to place median and variance in a logical position
+        new_index = ['count', 'mean', 'median', 'std', 'variance', 'min', '25%', '50%', '75%', 'max']
+        summary_stats = summary_stats.reindex(new_index)
+
+        st.write(summary_stats)
+    else:
+        st.warning("No numeric columns found in the dataset.")
+
+    if len(non_numeric_columns) > 0:
+        st.write("Non-numeric columns in the dataset:")
+        st.write(", ".join(non_numeric_columns))
+        st.write("These columns were excluded from the summary statistics.")
 
     # Create a line plot of Total Distance over time
     st.header("Total Distance Over Time")
