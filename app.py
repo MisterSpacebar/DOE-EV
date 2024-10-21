@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import json
 
 # Set page title
 st.set_page_config(page_title="EV Data Visualization", layout="wide")
@@ -48,17 +49,24 @@ def convert_time_to_hours(df):
 # Set the folder paths relative to the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vehicle_data_folder = os.path.join(current_dir, "EV_Data", "Reference", "vehicle")
-reference_data_file = os.path.join(current_dir, "EV_Data", "Reference", "data_reference", "VehicleAttributesFull.csv")
+reference_data_file = os.path.join(current_dir, "EV_Data", "Reference", "data_reference", "vehicle_reference_json.json")
+reference_data = {}
 
 # Read CSV files
 try:
     csv_files = read_csv_files(vehicle_data_folder)
-    reference_data = read_csv_with_encoding(reference_data_file)
-    if reference_data is None:
-        st.error("Failed to read the reference data file. Please check the file encoding.")
-        st.stop()
+    with open(reference_data_file, 'r') as json_file:
+        reference_data = json.load(json_file)
+
+    # Debugging: Print the first few items in reference_data
+    st.write("First few items in reference data:")
+    st.write(reference_data[:5])
+
 except FileNotFoundError as e:
     st.error(f"Error: {e}. Please check the file paths and try again.")
+    st.stop()
+except json.JSONDecodeError as e:
+    st.error(f"Error decoding JSON: {e}. Please check if the JSON file is valid.")
     st.stop()
 
 # Sidebar for file selection
@@ -81,9 +89,20 @@ if selected_file:
     vehicle_id = selected_file.split('.')[
         1]  # Assuming the vehicle ID is always the second element when splitting by '.'
 
+    # Debugging: Print the extracted vehicle ID
+    st.write(f"Extracted Vehicle ID: {vehicle_id}")
+
     # Look up additional information in the reference data
-    vehicle_info = reference_data[reference_data['Vehicle ID'] == vehicle_id].iloc[0] if not reference_data[
-        reference_data['Vehicle ID'] == vehicle_id].empty else None
+    vehicle_info = next((item for item in reference_data if item['Vehicle ID'] == vehicle_id), None)
+
+    # Debugging: Print the result of the lookup
+    if vehicle_info:
+        st.write("Found vehicle info:")
+        st.write(vehicle_info)
+    else:
+        st.write(f"No vehicle info found for ID: {vehicle_id}")
+        st.write("Available Vehicle IDs in reference data:")
+        st.write([item['Vehicle ID'] for item in reference_data[:10]])  # Show first 10 for brevity
 
     st.header("Vehicle Information")
     if vehicle_info is not None:
@@ -102,6 +121,7 @@ if selected_file:
             st.write(f"**State:** {vehicle_info['State']}")
     else:
         st.write("No additional information available for this vehicle.")
+
 
     st.header("Data Preview")
     st.write("Below is a preview of the first few rows of the dataset.")
@@ -193,15 +213,3 @@ else:
 
     If you're sure the files exist in this location, there might be a permission issue or a problem with file naming.
     """)
-
-# Add a footer with additional information
-st.markdown("""
----
-### About This Dashboard
-
-This dashboard is designed to help analyze and visualize electric vehicle (EV) data. It provides various 
-visualizations and statistics to gain insights into EV performance, usage patterns, and energy consumption.
-All distance measurements are in miles and time-based values are in hours.
-
-For questions or support, please contact the development team.
-""")
