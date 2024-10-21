@@ -48,7 +48,7 @@ def convert_time_to_hours(df):
 # Set the folder paths relative to the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vehicle_data_folder = os.path.join(current_dir, "EV_Data", "Reference", "vehicle")
-reference_data_file = os.path.join(current_dir, "EV_Data", "Reference", "data_reference", "vehicle_reference.csv")
+reference_data_file = os.path.join(current_dir, "EV_Data", "Reference", "data_reference", "VehicleAttributesFull.csv")
 
 # Read CSV files
 try:
