@@ -6,7 +6,7 @@ import os
 import json
 
 # Set page title
-st.set_page_config(page_title="EV Data Visualization", layout="wide")
+st.set_page_config(page_title="EV Data Visualization", layout="wide", page_icon="truck")
 
 
 # Function to read CSV files from a folder
