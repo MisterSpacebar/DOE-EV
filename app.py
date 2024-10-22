@@ -46,6 +46,58 @@ def convert_time_to_hours(df):
     return df
 
 
+def clean_temperature_data(df):
+    """
+    Clean temperature data by removing obvious outliers and invalid values.
+    For temperature data, values outside reasonable range (e.g., -20°F to 130°F)
+    are likely errors.
+    """
+    if 'Average Ambient Temperature' in df.columns:
+        # Define reasonable temperature range for the dataset location
+        temp_min = -20
+        temp_max = 130
+
+        # Create a mask for valid temperatures
+        valid_temp_mask = (df['Average Ambient Temperature'] >= temp_min) & \
+                          (df['Average Ambient Temperature'] <= temp_max)
+
+        # Create a copy of the dataframe with only valid temperatures
+        cleaned_df = df.copy()
+        cleaned_df.loc[~valid_temp_mask, 'Average Ambient Temperature'] = None
+
+        return cleaned_df
+    return df
+
+
+def calculate_summary_statistics(df):
+    """
+    Calculate summary statistics with cleaned data
+    """
+    # Clean the data first
+    cleaned_df = clean_temperature_data(df)
+
+    # Separate numeric and non-numeric columns
+    numeric_columns = cleaned_df.select_dtypes(include=['int64', 'float64']).columns
+    non_numeric_columns = cleaned_df.select_dtypes(exclude=['int64', 'float64']).columns
+
+    if len(numeric_columns) > 0:
+        # Calculate summary statistics for numeric columns
+        summary_stats = cleaned_df[numeric_columns].describe()
+
+        # Add median (50% is already included in describe())
+        summary_stats.loc['median'] = summary_stats.loc['50%']
+
+        # Calculate variance with cleaned data
+        summary_stats.loc['variance'] = cleaned_df[numeric_columns].var()
+
+        # Reorder rows to place median and variance in a logical position
+        new_index = ['count', 'mean', 'median', 'std', 'variance', 'min', '25%', '50%', '75%', 'max']
+        summary_stats = summary_stats.reindex(new_index)
+
+        return summary_stats, non_numeric_columns
+
+    return None, non_numeric_columns
+
 # Set the folder paths relative to the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
 vehicle_data_folder = os.path.join(current_dir, "EV_Data", "Reference", "vehicle")
@@ -126,27 +178,11 @@ if selected_file:
     # st.write(df.describe())
 
     st.header("Summary Statistics")
-    st.write(
-        "This table shows summary statistics for the numerical columns in the dataset")
+    st.write("This table shows summary statistics for the numerical columns in the dataset")
 
-    # Separate numeric and non-numeric columns
-    numeric_columns = df.select_dtypes(include=['int64', 'float64']).columns
-    non_numeric_columns = df.select_dtypes(exclude=['int64', 'float64']).columns
+    summary_stats, non_numeric_columns = calculate_summary_statistics(df)
 
-    if len(numeric_columns) > 0:
-        # Calculate summary statistics for numeric columns
-        summary_stats = df[numeric_columns].describe()
-
-        # Add median (50% is already included in describe())
-        summary_stats.loc['median'] = summary_stats.loc['50%']
-
-        # Calculate variance
-        summary_stats.loc['variance'] = df[numeric_columns].var()
-
-        # Reorder rows to place median and variance in a logical position
-        new_index = ['count', 'mean', 'median', 'std', 'variance', 'min', '25%', '50%', '75%', 'max']
-        summary_stats = summary_stats.reindex(new_index)
-
+    if summary_stats is not None:
         st.write(summary_stats)
     else:
         st.warning("No numeric columns found in the dataset.")
