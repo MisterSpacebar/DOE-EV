@@ -68,27 +68,44 @@ def clean_temperature_data(df):
         return cleaned_df
     return df
 
+def calculate_manual_variance(data):
+    """
+    Manually calculate variance of a pandas Series using the formula:
+    variance = sum((x - mean)^2) / (n-1)
+    """
+    # Remove any NaN values
+    clean_data = data.dropna()
+
+    # Calculate mean
+    mean = sum(clean_data) / len(clean_data)
+
+    # Calculate sum of squared differences from mean
+    squared_diff_sum = sum((x - mean) ** 2 for x in clean_data)
+
+    # Calculate variance (using n-1 for sample variance)
+    variance = squared_diff_sum / (len(clean_data) - 1)
+
+    return variance
+
 
 def calculate_summary_statistics(df):
     """
-    Calculate summary statistics with cleaned data
+    Calculate summary statistics with manual variance calculation
     """
-    # Clean the data first
-    cleaned_df = clean_temperature_data(df)
-
     # Separate numeric and non-numeric columns
-    numeric_columns = cleaned_df.select_dtypes(include=['int64', 'float64']).columns
-    non_numeric_columns = cleaned_df.select_dtypes(exclude=['int64', 'float64']).columns
+    numeric_columns = df.select_dtypes(include=['int64', 'float64']).columns
+    non_numeric_columns = df.select_dtypes(exclude=['int64', 'float64']).columns
 
     if len(numeric_columns) > 0:
         # Calculate summary statistics for numeric columns
-        summary_stats = cleaned_df[numeric_columns].describe()
+        summary_stats = df[numeric_columns].describe()
 
         # Add median (50% is already included in describe())
         summary_stats.loc['median'] = summary_stats.loc['50%']
 
-        # Calculate variance with cleaned data
-        summary_stats.loc['variance'] = cleaned_df[numeric_columns].var()
+        # Calculate variance manually for each numeric column
+        variances = {col: calculate_manual_variance(df[col]) for col in numeric_columns}
+        summary_stats.loc['variance'] = pd.Series(variances)
 
         # Reorder rows to place median and variance in a logical position
         new_index = ['count', 'mean', 'median', 'std', 'variance', 'min', '25%', '50%', '75%', 'max']
@@ -97,6 +114,16 @@ def calculate_summary_statistics(df):
         return summary_stats, non_numeric_columns
 
     return None, non_numeric_columns
+
+
+def format_summary_statistics(summary_stats):
+    """
+    Format summary statistics to a reasonable number of decimal places
+    """
+    if summary_stats is not None:
+        formatted_stats = summary_stats.round(4)
+        return formatted_stats
+    return None
 
 # Set the folder paths relative to the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -181,9 +208,10 @@ if selected_file:
     st.write("This table shows summary statistics for the numerical columns in the dataset")
 
     summary_stats, non_numeric_columns = calculate_summary_statistics(df)
+    formatted_stats = format_summary_statistics(summary_stats)
 
-    if summary_stats is not None:
-        st.write(summary_stats)
+    if formatted_stats is not None:
+        st.write(formatted_stats)
     else:
         st.warning("No numeric columns found in the dataset.")
 
