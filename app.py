@@ -54,8 +54,8 @@ def clean_temperature_data(df):
     """
     if 'Average Ambient Temperature' in df.columns:
         # Define reasonable temperature range for the dataset location
-        temp_min = -20
-        temp_max = 130
+        temp_min = -50
+        temp_max = 150
 
         # Create a mask for valid temperatures
         valid_temp_mask = (df['Average Ambient Temperature'] >= temp_min) & \
@@ -68,21 +68,20 @@ def clean_temperature_data(df):
         return cleaned_df
     return df
 
+
 def calculate_manual_variance(data):
     """
     Manually calculate variance of a pandas Series using the formula:
     variance = sum((x - mean)^2) / (n-1)
     """
-    # Remove any NaN values
+    # Remove NaN values
     clean_data = data.dropna()
 
-    # Calculate mean
+    if len(clean_data) <= 1:
+        return 0
+
     mean = sum(clean_data) / len(clean_data)
-
-    # Calculate sum of squared differences from mean
     squared_diff_sum = sum((x - mean) ** 2 for x in clean_data)
-
-    # Calculate variance (using n-1 for sample variance)
     variance = squared_diff_sum / (len(clean_data) - 1)
 
     return variance
@@ -90,30 +89,40 @@ def calculate_manual_variance(data):
 
 def calculate_summary_statistics(df):
     """
-    Calculate summary statistics with manual variance calculation
+    Calculate summary statistics directly from the data
     """
-    # Separate numeric and non-numeric columns
+    # Skip odometer columns for variance
+    exclude_variance = ['Initial Odometer', 'Final Odometer']
+
+    # Get numeric columns
     numeric_columns = df.select_dtypes(include=['int64', 'float64']).columns
-    non_numeric_columns = df.select_dtypes(exclude=['int64', 'float64']).columns
 
     if len(numeric_columns) > 0:
-        # Calculate summary statistics for numeric columns
+        # Get basic statistics using pandas describe
         summary_stats = df[numeric_columns].describe()
 
-        # Add median (50% is already included in describe())
+        # Add median (though it's already in 50%)
         summary_stats.loc['median'] = summary_stats.loc['50%']
 
-        # Calculate variance manually for each numeric column
-        variances = {col: calculate_manual_variance(df[col]) for col in numeric_columns}
+        # Calculate variance manually for non-excluded columns
+        variances = {}
+        for col in numeric_columns:
+            if col not in exclude_variance:
+                variances[col] = calculate_manual_variance(df[col])
+
+        # Add variance row
         summary_stats.loc['variance'] = pd.Series(variances)
 
-        # Reorder rows to place median and variance in a logical position
+        # Reorder rows
         new_index = ['count', 'mean', 'median', 'std', 'variance', 'min', '25%', '50%', '75%', 'max']
         summary_stats = summary_stats.reindex(new_index)
 
-        return summary_stats, non_numeric_columns
+        # Round to 4 decimal places
+        summary_stats = summary_stats.round(4)
 
-    return None, non_numeric_columns
+        return summary_stats
+
+    return None
 
 
 def format_summary_statistics(summary_stats):
@@ -207,18 +216,11 @@ if selected_file:
     st.header("Summary Statistics")
     st.write("This table shows summary statistics for the numerical columns in the dataset")
 
-    summary_stats, non_numeric_columns = calculate_summary_statistics(df)
-    formatted_stats = format_summary_statistics(summary_stats)
-
-    if formatted_stats is not None:
-        st.write(formatted_stats)
+    summary_stats = calculate_summary_statistics(df)
+    if summary_stats is not None:
+        st.write(summary_stats)
     else:
         st.warning("No numeric columns found in the dataset.")
-
-    if len(non_numeric_columns) > 0:
-        st.write("Non-numeric columns in the dataset:")
-        st.write(", ".join(non_numeric_columns))
-        st.write("These columns were excluded from the summary statistics.")
 
     # Create a line plot of Total Distance over time
     st.header("Total Distance Over Time")
