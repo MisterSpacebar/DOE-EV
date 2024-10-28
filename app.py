@@ -6,7 +6,7 @@ from pages.fleetdata import EVDataAnalyzer
 from pages.vehicledata import VehicleDataAnalyzer
 
 # Set page configuration
-st.set_page_config(page_title="EV Data Visualization", layout="wide", page_icon="🚗")
+st.set_page_config(page_title="EV Data Visualization", layout="wide", page_icon="truck")
 
 
 # Function to read CSV files from a folder
