@@ -22,14 +22,9 @@ class EVDataAnalyzer:
         all_data = []
 
         print("\nStarting data aggregation...")
-        print(f"Processing {len(self.csv_files)} files")
-
         for filename, df in self.csv_files.items():
             try:
                 vehicle_id = filename.split('.')[1]
-                print(f"\nProcessing {vehicle_id}")
-
-                # Try case-insensitive matching
                 vehicle_info = self.reference_data[
                     self.reference_data['Vehicle ID'].str.lower() == vehicle_id.lower()
                     ]
@@ -37,16 +32,37 @@ class EVDataAnalyzer:
                 if not vehicle_info.empty:
                     df_copy = df.copy()
 
-                    # Convert date/time columns if they exist
-                    date_columns = [col for col in df_copy.columns if 'time' in col.lower() or 'date' in col.lower()]
+                    # Handle time columns first
+                    time_columns = ['Driving Time', 'Idling Time']
+                    for col in time_columns:
+                        if col in df_copy.columns:
+                            try:
+                                # If it's already a timedelta or can be converted to one
+                                if df_copy[col].dtype == 'timedelta64[ns]':
+                                    df_copy[col] = df_copy[col].dt.total_seconds() / 3600
+                                else:
+                                    df_copy[col] = pd.to_timedelta(df_copy[col]).dt.total_seconds() / 3600
+                            except Exception as e:
+                                print(f"Could not convert {col} to hours for {vehicle_id}: {e}")
+                                # If conversion fails, try to extract numeric values if possible
+                                try:
+                                    df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce')
+                                except:
+                                    print(f"Could not extract numeric values from {col}")
+
+                    # Handle other date/time columns
+                    date_columns = [col for col in df_copy.columns
+                                    if ('time' in col.lower() or 'date' in col.lower())
+                                    and col not in time_columns]
                     for col in date_columns:
                         try:
                             df_copy[col] = pd.to_datetime(df_copy[col])
                         except Exception as e:
                             print(f"Could not convert column {col} to datetime: {e}")
 
-                    # Add metadata
                     df_copy['Vehicle_ID'] = vehicle_id
+
+                    # Add metadata columns
                     metadata_columns = {
                         'Manufacturer': 'Manufacturer',
                         'Model_Name': 'Model Name',
@@ -60,91 +76,14 @@ class EVDataAnalyzer:
                     }
 
                     for col_name, ref_col in metadata_columns.items():
-                        try:
-                            df_copy[col_name] = vehicle_info.iloc[0][ref_col]
-                        except Exception as e:
-                            print(f"Error adding column {col_name}: {e}")
-                            df_copy[col_name] = 'Unknown'
+                        df_copy[col_name] = vehicle_info.iloc[0][ref_col]
 
                     all_data.append(df_copy)
-                    print(f"Successfully processed {vehicle_id}")
-                else:
-                    print(f"No reference data found for {vehicle_id}")
-
             except Exception as e:
                 print(f"Error processing {filename}: {e}")
                 continue
 
-        if not all_data:
-            print("No data was aggregated!")
-            return pd.DataFrame()
-
-        try:
-            result = pd.concat(all_data, ignore_index=True)
-            print(f"\nSuccessfully aggregated {len(all_data)} vehicles")
-            print(f"Final dataset shape: {result.shape}")
-            return result
-        except Exception as e:
-            print(f"Error in final concatenation: {e}")
-            return pd.DataFrame()
-
-        def _generate_vehicle_summaries(self) -> pd.DataFrame:
-            """Generate summary statistics for each individual vehicle"""
-            print("\nGenerating vehicle summaries...")
-            summaries = []
-
-            for filename, df in self.csv_files.items():
-                try:
-                    vehicle_id = filename.split('.')[1]
-                    print(f"Processing summary for {vehicle_id}")
-
-                    summary = {}
-                    summary['Vehicle_ID'] = vehicle_id
-
-                    # Basic metrics to analyze
-                    metrics = [
-                        'Total Distance',
-                        'Total Energy Consumption',
-                        'SOC Used',
-                        'Average Ambient Temperature',
-                        'Driving Time',
-                        'Idling Time'
-                    ]
-
-                    # Calculate statistics for each metric
-                    for metric in metrics:
-                        if metric in df.columns:
-                            summary[f"{metric}_mean"] = df[metric].mean()
-                            summary[f"{metric}_median"] = df[metric].median()
-                            summary[f"{metric}_std"] = df[metric].std()
-                            summary[f"{metric}_min"] = df[metric].min()
-                            summary[f"{metric}_max"] = df[metric].max()
-
-                    # Add metadata from reference data
-                    vehicle_info = self.reference_data[
-                        self.reference_data['Vehicle ID'].str.lower() == vehicle_id.lower()
-                        ]
-                    if not vehicle_info.empty:
-                        summary['Manufacturer'] = vehicle_info.iloc[0]['Manufacturer']
-                        summary['Model_Name'] = vehicle_info.iloc[0]['Model Name']
-                        summary['Weight_Class'] = vehicle_info.iloc[0]['Weight Class']
-                        summary['Battery_Chemistry'] = vehicle_info.iloc[0]['Battery Chemistry']
-                        summary['Rated_Energy'] = vehicle_info.iloc[0]['Rated Energy']
-
-                    summaries.append(summary)
-                    print(f"Successfully generated summary for {vehicle_id}")
-
-                except Exception as e:
-                    print(f"Error generating summary for {filename}: {e}")
-                    continue
-
-            if not summaries:
-                print("No summaries were generated")
-                return pd.DataFrame()
-
-            summaries_df = pd.DataFrame(summaries)
-            print(f"Generated summaries for {len(summaries)} vehicles")
-            return summaries_df
+        return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
     def get_fleet_summary(self) -> Dict:
         """Generate summary statistics for the entire fleet"""
@@ -161,78 +100,24 @@ class EVDataAnalyzer:
             rated_energy = self.reference_data['Rated Energy'].dropna()
             if not rated_energy.empty:
                 summary['Avg_Rated_Energy'] = rated_energy.mean()
-            else:
-                summary['Avg_Rated_Energy'] = 0
 
             battery_chem = self.reference_data['Battery Chemistry'].dropna()
             if not battery_chem.empty:
                 summary['Most_Common_Chemistry'] = battery_chem.mode().iloc[0]
-            else:
-                summary['Most_Common_Chemistry'] = 'Unknown'
 
         # Try to get date range if available
-        try:
-            if not self.aggregated_data.empty and 'Local Trip Start Time' in self.aggregated_data.columns:
-                # Convert to datetime if not already
-                start_times = pd.to_datetime(self.aggregated_data['Local Trip Start Time'])
-                end_times = pd.to_datetime(self.aggregated_data['Local Trip End Time'])
-
-                summary[
-                    'Date_Range'] = f"{start_times.min().strftime('%Y-%m-%d')} to {end_times.max().strftime('%Y-%m-%d')}"
-        except Exception as e:
-            print(f"Error calculating date range: {e}")
-            summary['Date_Range'] = 'Error calculating date range'
+        if not self.aggregated_data.empty:
+            date_cols = [col for col in self.aggregated_data.columns
+                         if 'time' in col.lower() or 'date' in col.lower()]
+            if date_cols:
+                date_col = date_cols[0]
+                try:
+                    dates = pd.to_datetime(self.aggregated_data[date_col])
+                    summary['Date_Range'] = f"{dates.min():%Y-%m-%d} to {dates.max():%Y-%m-%d}"
+                except Exception as e:
+                    print(f"Error calculating date range: {e}")
 
         return summary
-
-    def generate_visualizations(self):
-        """Generate a set of standard visualizations for the dashboard"""
-        visualizations = {}
-
-        if self.aggregated_data.empty:
-            return visualizations
-
-        try:
-            # Energy consumption by manufacturer
-            if 'Manufacturer' in self.aggregated_data.columns and 'Total Energy Consumption' in self.aggregated_data.columns:
-                visualizations['energy_by_manufacturer'] = px.box(
-                    self.aggregated_data,
-                    x='Manufacturer',
-                    y='Total Energy Consumption',
-                    title='Energy Consumption Distribution by Manufacturer'
-                )
-
-            # Distance by region
-            if 'Region' in self.aggregated_data.columns and 'Total Distance' in self.aggregated_data.columns:
-                visualizations['distance_by_region'] = px.violin(
-                    self.aggregated_data,
-                    x='Region',
-                    y='Total Distance',
-                    title='Distance Distribution by Region'
-                )
-
-            # Temperature impact
-            if all(col in self.aggregated_data.columns for col in
-                   ['Average Ambient Temperature', 'Total Energy Consumption', 'Region']):
-                visualizations['temperature_impact'] = px.scatter(
-                    self.aggregated_data,
-                    x='Average Ambient Temperature',
-                    y='Total Energy Consumption',
-                    color='Region',
-                    title='Temperature Impact on Energy Consumption'
-                )
-
-            # Battery chemistry distribution
-            if 'Battery_Chemistry' in self.aggregated_data.columns:
-                visualizations['chemistry_distribution'] = px.pie(
-                    self.aggregated_data,
-                    names='Battery_Chemistry',
-                    title='Distribution of Battery Chemistry Types'
-                )
-        except Exception as e:
-            print(f"Error generating visualizations: {e}")
-
-        return visualizations
 
     def analyze_by_category(self, category: str) -> pd.DataFrame:
         """Generate statistics grouped by a specific category"""
@@ -286,86 +171,212 @@ class EVDataAnalyzer:
         except Exception as e:
             return {'error': f'Statistical test failed: {str(e)}'}
 
-        def compare_vehicles(self, metric: str, stat_type: str = 'mean') -> pd.DataFrame:
-            """Compare specific metrics across vehicles"""
-            summary_col = f"{metric}_{stat_type}"
-            vehicle_stats = self._generate_vehicle_summaries()
+    def compare_manufacturers(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Compare comprehensive statistics across manufacturers"""
+        if self.aggregated_data.empty:
+            return pd.DataFrame(), pd.DataFrame()
 
-            if not vehicle_stats.empty and summary_col in vehicle_stats.columns:
-                comparison = vehicle_stats[[
-                    'Vehicle_ID', 'Manufacturer', 'Model_Name', summary_col
-                ]].sort_values(summary_col, ascending=False)
+        # Calculate vehicle-level statistics
+        vehicle_stats = []
+        for vehicle_id in self.aggregated_data['Vehicle_ID'].unique():
+            vehicle_data = self.aggregated_data[self.aggregated_data['Vehicle_ID'] == vehicle_id]
 
-                # Calculate relative differences
-                mean_value = comparison[summary_col].mean()
-                comparison['Percent_Difference_from_Mean'] = (
-                        (comparison[summary_col] - mean_value) / mean_value * 100
-                ).round(2)
+            stats = {
+                'Vehicle_ID': vehicle_id,
+                'Manufacturer': vehicle_data['Manufacturer'].iloc[0],
+                'Model': vehicle_data['Model_Name'].iloc[0]
+            }
 
-                return comparison
-            return pd.DataFrame()
-
-        def compare_manufacturers(self, metric: str) -> pd.DataFrame:
-            """Compare metrics aggregated by manufacturer"""
-            vehicle_stats = self._generate_vehicle_summaries()
-
-            if not vehicle_stats.empty:
-                stats_to_compute = ['mean', 'median', 'std', 'min', 'max']
-                manufacturer_stats = []
-
-                for manufacturer in vehicle_stats['Manufacturer'].unique():
-                    mfg_data = vehicle_stats[vehicle_stats['Manufacturer'] == manufacturer]
-                    stats = {
-                        'Manufacturer': manufacturer,
-                        'Vehicle_Count': len(mfg_data)
-                    }
-
-                    for stat in stats_to_compute:
-                        col = f"{metric}_{stat}"
-                        if col in mfg_data.columns:
-                            stats[f"{stat}"] = mfg_data[col].mean()
-
-                    manufacturer_stats.append(stats)
-
-                return pd.DataFrame(manufacturer_stats)
-            return pd.DataFrame()
-
-        def generate_comparative_visualizations(self, metric: str):
-            """Generate visualizations comparing vehicles and manufacturers"""
-            vehicle_stats = self._generate_vehicle_summaries()
-            visuals = {}
-
-            if not vehicle_stats.empty:
-                mean_col = f"{metric}_mean"
-
-                if mean_col in vehicle_stats.columns:
-                    # Box plot by manufacturer
-                    visuals['manufacturer_distribution'] = px.box(
-                        vehicle_stats,
-                        x='Manufacturer',
-                        y=mean_col,
-                        points='all',
-                        title=f'{metric} Distribution by Manufacturer'
+            # Energy efficiency
+            if 'Total Energy Consumption' in vehicle_data.columns and 'Total Distance' in vehicle_data.columns:
+                total_distance = vehicle_data['Total Distance'].sum()
+                if total_distance > 0:  # Prevent division by zero
+                    stats['Energy_per_Mile'] = (
+                            vehicle_data['Total Energy Consumption'].sum() /
+                            total_distance
                     )
 
-                    # Scatter plot with error bars
-                    visuals['vehicle_comparison'] = px.scatter(
-                        vehicle_stats,
-                        x='Vehicle_ID',
-                        y=mean_col,
-                        error_y=f"{metric}_std",
-                        color='Manufacturer',
-                        title=f'Vehicle {metric} Comparison'
-                    )
+            # Idle time calculation
+            if 'Driving Time' in vehicle_data.columns and 'Idling Time' in vehicle_data.columns:
+                try:
+                    # Convert time columns to hours if they're datetime
+                    driving_time = vehicle_data['Driving Time']
+                    idling_time = vehicle_data['Idling Time']
 
-                    # Violin plot split by manufacturer
-                    visuals['manufacturer_violin'] = px.violin(
-                        vehicle_stats,
-                        x='Manufacturer',
-                        y=mean_col,
-                        box=True,
-                        points='all',
-                        title=f'{metric} Distribution by Manufacturer'
-                    )
+                    # Convert if datetime
+                    if driving_time.dtype == 'datetime64[ns]':
+                        driving_time = pd.to_timedelta(driving_time).dt.total_seconds() / 3600
+                    if idling_time.dtype == 'datetime64[ns]':
+                        idling_time = pd.to_timedelta(idling_time).dt.total_seconds() / 3600
 
-            return visuals
+                    # Calculate total time and idle percentage
+                    total_time = driving_time.sum() + idling_time.sum()
+                    if total_time > 0:  # Prevent division by zero
+                        stats['Idle_Percentage'] = (idling_time.sum() / total_time * 100)
+                    else:
+                        stats['Idle_Percentage'] = 0
+                except Exception as e:
+                    print(f"Error calculating idle time for vehicle {vehicle_id}: {e}")
+                    stats['Idle_Percentage'] = 0
+
+            vehicle_stats.append(stats)
+
+        # Create vehicle stats DataFrame
+        vehicle_stats_df = pd.DataFrame(vehicle_stats)
+
+        # Calculate manufacturer summary only if we have valid data
+        if not vehicle_stats_df.empty and 'Manufacturer' in vehicle_stats_df.columns:
+            # Get numeric columns for aggregation
+            numeric_cols = vehicle_stats_df.select_dtypes(include=['float64', 'int64']).columns
+            agg_columns = {}
+
+            if 'Vehicle_ID' in vehicle_stats_df.columns:
+                agg_columns['Vehicle_ID'] = 'count'
+            if 'Energy_per_Mile' in numeric_cols:
+                agg_columns['Energy_per_Mile'] = ['mean', 'std', 'min', 'max']
+            if 'Idle_Percentage' in numeric_cols:
+                agg_columns['Idle_Percentage'] = ['mean', 'std', 'min', 'max']
+
+            manufacturer_summary = vehicle_stats_df.groupby('Manufacturer').agg(agg_columns).round(2)
+
+            # Flatten column names if we have multi-level columns
+            if isinstance(manufacturer_summary.columns, pd.MultiIndex):
+                manufacturer_summary.columns = [
+                    'Vehicle_Count' if col == ('Vehicle_ID', 'count')
+                    else f"{col[0]}_{col[1].capitalize()}"
+                    for col in manufacturer_summary.columns
+                ]
+        else:
+            manufacturer_summary = pd.DataFrame()
+
+        return vehicle_stats_df, manufacturer_summary
+
+    def generate_statistical_summary(self) -> Dict:
+        """Generate comprehensive statistical summary"""
+        if self.aggregated_data.empty:
+            return {'error': 'No data available'}
+
+        stats = {
+            'fleet_summary': {
+                'total_vehicles': len(self.aggregated_data['Vehicle_ID'].unique()),
+                'total_trips': len(self.aggregated_data),
+                'total_distance': self.aggregated_data['Total Distance'].sum()
+                if 'Total Distance' in self.aggregated_data.columns else 0,
+                'avg_trip_distance': self.aggregated_data['Total Distance'].mean()
+                if 'Total Distance' in self.aggregated_data.columns else 0,
+                'total_energy': self.aggregated_data['Total Energy Consumption'].sum()
+                if 'Total Energy Consumption' in self.aggregated_data.columns else 0
+            }
+        }
+
+        # Calculate percentiles for key metrics
+        key_metrics = ['Total Distance', 'Total Energy Consumption', 'SOC Used']
+        percentiles = [0.1, 0.25, 0.5, 0.75, 0.9]
+
+        stats['percentiles'] = {}
+        for metric in key_metrics:
+            if metric in self.aggregated_data.columns:
+                stats['percentiles'][metric] = {
+                    f'p{int(p * 100)}': self.aggregated_data[metric].quantile(p)
+                    for p in percentiles
+                }
+
+        return stats
+
+    def generate_comparative_visualizations(self):
+        """Generate comparative visualizations"""
+        if self.aggregated_data.empty:
+            return {}
+
+        visuals = {}
+        aggregated_data = self.aggregated_data.copy()
+
+        # Convert datetime columns to numeric hours if needed
+        time_columns = ['Driving Time', 'Idling Time']
+        for col in time_columns:
+            if col in aggregated_data.columns and aggregated_data[col].dtype == 'datetime64[ns]':
+                try:
+                    aggregated_data[col] = pd.to_timedelta(aggregated_data[col]).dt.total_seconds() / 3600
+                except Exception as e:
+                    print(f"Error converting {col} to hours: {e}")
+                    continue
+
+        # Energy efficiency by manufacturer
+        if all(col in aggregated_data.columns for col in
+               ['Manufacturer', 'Total Energy Consumption', 'Total Distance']):
+            try:
+                efficiency_data = (
+                    aggregated_data.groupby(['Manufacturer', 'Vehicle_ID'])
+                    .agg({
+                        'Total Energy Consumption': 'sum',
+                        'Total Distance': 'sum'
+                    })
+                    .reset_index()
+                )
+                efficiency_data['Energy_per_Mile'] = (
+                        efficiency_data['Total Energy Consumption'] /
+                        efficiency_data['Total Distance']
+                )
+
+                visuals['energy_efficiency'] = px.box(
+                    efficiency_data,
+                    x='Manufacturer',
+                    y='Energy_per_Mile',
+                    title='Energy Efficiency by Manufacturer'
+                )
+            except Exception as e:
+                print(f"Error generating energy efficiency visualization: {e}")
+
+        # Trip distance distribution
+        if 'Total Distance' in aggregated_data.columns:
+            try:
+                visuals['trip_distance'] = px.violin(
+                    aggregated_data,
+                    x='Manufacturer',
+                    y='Total Distance',
+                    title='Trip Distance Distribution by Manufacturer',
+                    box=True
+                )
+            except Exception as e:
+                print(f"Error generating trip distance visualization: {e}")
+
+        # Idle time comparison
+        if all(col in aggregated_data.columns for col in ['Driving Time', 'Idling Time', 'Manufacturer']):
+            try:
+                idle_data = (
+                    aggregated_data.groupby(['Manufacturer', 'Vehicle_ID'])
+                    .agg({
+                        'Driving Time': 'sum',
+                        'Idling Time': 'sum'
+                    })
+                    .reset_index()
+                )
+                idle_data['Idle_Percentage'] = (
+                        (idle_data['Idling Time'] / (idle_data['Driving Time'] + idle_data['Idling Time'])) * 100
+                )
+
+                visuals['idle_comparison'] = px.box(
+                    idle_data,
+                    x='Manufacturer',
+                    y='Idle_Percentage',
+                    title='Idle Time Percentage by Manufacturer'
+                )
+            except Exception as e:
+                print(f"Error generating idle time visualization: {e}")
+
+        # Energy vs Distance scatter
+        if all(col in aggregated_data.columns for col in
+               ['Total Energy Consumption', 'Total Distance', 'Average Ambient Temperature']):
+            try:
+                visuals['energy_distance_scatter'] = px.scatter(
+                    aggregated_data,
+                    x='Total Distance',
+                    y='Total Energy Consumption',
+                    color='Average Ambient Temperature',
+                    title='Energy Consumption vs Distance (colored by Temperature)',
+                    trendline="ols"
+                )
+            except Exception as e:
+                print(f"Error generating energy-distance scatter plot: {e}")
+
+        return visuals

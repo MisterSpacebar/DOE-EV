@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import plotly.express as px  # Add this
+import plotly.graph_objects as go  # Add this
 from pages.fleetdata import EVDataAnalyzer
 from pages.vehicledata import VehicleDataAnalyzer
 
@@ -109,8 +111,9 @@ def main():
 
 
 
-    else:
-        # Fleet analysis
+
+    else:  # Fleet Analysis mode
+
         fleet_analyzer = EVDataAnalyzer(csv_files, reference_data)
 
         if fleet_analyzer.aggregated_data.empty:
@@ -118,60 +121,219 @@ def main():
 
             st.stop()
 
-        try:
-            # Display fleet summary
-            summary = fleet_analyzer.get_fleet_summary()
+        analysis_type = st.sidebar.radio(
+
+            "Select Analysis Type",
+
+            ["Fleet Overview", "Comparative Analysis", "Statistical Summary"]
+
+        )
+
+        if analysis_type == "Fleet Overview":
+            st.header("Fleet Overview")
+
+            # Display basic fleet metrics
+            fleet_summary = fleet_analyzer.get_fleet_summary()
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Total Vehicles", summary['Total_Vehicles'])
-                st.metric("Total Manufacturers", summary['Total_Manufacturers'])
-
+                st.metric("Total Vehicles", fleet_summary['Total_Vehicles'])
+                st.metric("Total Manufacturers", fleet_summary['Total_Manufacturers'])
             with col2:
-                st.metric("Regions Covered", summary['Regions_Covered'])
-                st.metric("States Covered", summary['Total_States'])
-
+                st.metric("Regions Covered", fleet_summary['Regions_Covered'])
+                st.metric("Total States", fleet_summary['Total_States'])
             with col3:
-                if 'Avg_Rated_Energy' in summary:
-                    st.metric("Avg Rated Energy", f"{summary['Avg_Rated_Energy']:.1f} kWh")
-                if 'Most_Common_Chemistry' in summary:
-                    st.metric("Most Common Battery", summary['Most_Common_Chemistry'])
+                st.metric("Date Range", fleet_summary['Date_Range'])
+                if 'Avg_Rated_Energy' in fleet_summary:
+                    st.metric("Avg Rated Energy (kWh)", f"{fleet_summary['Avg_Rated_Energy']:.1f}")
 
-            # Category analysis
-            st.subheader("Analysis by Category")
 
-            category = st.selectbox(
-                "Select Category for Analysis",
-               ["Manufacturer", "Region", "Sector", "Vocation"]
+        elif analysis_type == "Comparative Analysis":
+
+            st.header("Comparative Analysis")
+
+            # Get comparative statistics
+
+            vehicle_stats, manufacturer_stats = fleet_analyzer.compare_manufacturers()
+
+            # Display manufacturer summary
+
+            st.subheader("Manufacturer Summary Statistics")
+
+            st.dataframe(manufacturer_stats)
+
+            # Display detailed comparisons
+
+            st.subheader("Detailed Vehicle Statistics")
+
+            metric_option = st.selectbox(
+
+                "Select Metric to Analyze",
+
+                ["Energy Efficiency", "Trip Patterns", "Idle Time", "Temperature Impact"]
+
             )
 
-            category_stats = fleet_analyzer.analyze_by_category(category)
+            if metric_option == "Energy Efficiency":
 
-            if not category_stats.empty:
-                st.write(category_stats)
-            else:
-                st.warning("No data available for the selected category.")
+                st.write("### Energy Efficiency Analysis")
 
-            # Visualizations
-            st.subheader("Visual Analysis")
-            visuals = fleet_analyzer.generate_visualizations()
+                # Show energy per mile stats
 
-            if not visuals:
-                st.warning("No visualizations could be generated. This might be due to missing or invalid data.")
-            else:
-                viz_options = st.multiselect(
-                    "Select Visualizations",
-                    list(visuals.keys()),
-                   default=list(visuals.keys())[0:2] if len(visuals) >= 2 else list(visuals.keys())
-                )
-                for viz in viz_options:
-                    st.plotly_chart(visuals[viz], use_container_width=True)
+                efficiency_stats = vehicle_stats[
 
-        except Exception as e:
-            st.error(f"Error displaying fleet analysis: {str(e)}")
-            st.write("Debug information:")
-            st.write(f"Number of files: {len(csv_files)}")
-            st.write(f"Reference data shape: {fleet_analyzer.reference_data.shape}")
+                    ['Manufacturer', 'Model', 'Vehicle_ID', 'Energy_per_Mile']
+
+                ].sort_values('Energy_per_Mile')
+
+                st.write("Energy Efficiency Rankings (kWh/mile):")
+
+                st.dataframe(efficiency_stats)
+
+                # Show visualization
+
+                visuals = fleet_analyzer.generate_comparative_visualizations()
+
+                if 'energy_efficiency' in visuals:
+                    st.plotly_chart(visuals['energy_efficiency'], use_container_width=True)
+
+
+            elif metric_option == "Trip Patterns":
+
+                st.write("### Trip Pattern Analysis")
+
+                # Show trip statistics
+
+                trip_cols = [col for col in vehicle_stats.columns if 'Distance' in col]
+
+                trip_stats = vehicle_stats[
+
+                    ['Manufacturer', 'Model', 'Vehicle_ID'] + trip_cols
+
+                    ]
+
+                st.dataframe(trip_stats)
+
+                # Show visualization
+
+                visuals = fleet_analyzer.generate_comparative_visualizations()
+
+                if 'trip_distance' in visuals:
+                    st.plotly_chart(visuals['trip_distance'], use_container_width=True)
+
+
+            elif metric_option == "Idle Time":
+
+                st.write("### Idle Time Analysis")
+
+                # Show idle time statistics
+
+                idle_stats = vehicle_stats[
+
+                    ['Manufacturer', 'Model', 'Vehicle_ID', 'Idle_Percentage']
+
+                ].sort_values('Idle_Percentage')
+
+                st.write("Idle Time Rankings (% of total time):")
+
+                st.dataframe(idle_stats)
+
+                # Show visualization
+
+                visuals = fleet_analyzer.generate_comparative_visualizations()
+
+                if 'idle_comparison' in visuals:
+                    st.plotly_chart(visuals['idle_comparison'], use_container_width=True)
+
+
+            else:  # Temperature Impact
+
+                st.write("### Temperature Impact Analysis")
+
+                temp_cols = [col for col in vehicle_stats.columns if 'Temperature' in col]
+
+                if temp_cols:
+                    temp_stats = vehicle_stats[
+
+                        ['Manufacturer', 'Model', 'Vehicle_ID'] + temp_cols
+
+                        ]
+
+                    st.dataframe(temp_stats)
+
+                    # Show energy vs temperature relationship
+
+                    st.plotly_chart(
+
+                        fleet_analyzer.generate_comparative_visualizations()['energy_distance_scatter'],
+
+                        use_container_width=True
+
+                    )
+
+
+        else:  # Statistical Summary
+
+            st.header("Statistical Summary")
+
+            # Get comprehensive statistics
+
+            stats = fleet_analyzer.generate_statistical_summary()
+
+            # Display fleet-wide summary
+
+            st.subheader("Fleet-Wide Statistics")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+
+                st.metric("Total Vehicles", stats['fleet_summary']['total_vehicles'])
+
+                st.metric("Total Trips", stats['fleet_summary']['total_trips'])
+
+            with col2:
+
+                st.metric("Total Distance (miles)", f"{stats['fleet_summary']['total_distance']:,.0f}")
+
+                st.metric("Avg Trip Distance", f"{stats['fleet_summary']['avg_trip_distance']:.1f}")
+
+            with col3:
+
+                st.metric("Total Energy (kWh)", f"{stats['fleet_summary']['total_energy']:,.0f}")
+
+            # Display percentile analysis
+
+            st.subheader("Percentile Analysis")
+
+            for metric, percentiles in stats['percentiles'].items():
+                st.write(f"### {metric}")
+
+                st.write(pd.DataFrame([percentiles]))
+
+            # Show correlations
+
+            st.subheader("Correlation Analysis")
+
+            correlation_matrix = fleet_analyzer.aggregated_data.select_dtypes(
+
+                include=['float64', 'int64']
+
+            ).corr()
+
+            st.plotly_chart(
+
+                px.imshow(
+
+                    correlation_matrix,
+
+                    title="Correlation Matrix of Key Metrics"
+
+                ),
+
+                use_container_width=True
+
+            )
 
 if __name__ == "__main__":
     main()

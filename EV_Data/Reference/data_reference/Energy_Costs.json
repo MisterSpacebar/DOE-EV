@@ -1,0 +1,206 @@
+[
+    {
+        "state": "Alabama",
+        "kwh": 12.6
+    },
+    {
+        "state": "Alaska",
+        "kwh": 22.34
+    },
+    {
+        "state": "Arizona",
+        "kwh": 12.905000000000001
+    },
+    {
+        "state": "Arkansas",
+        "kwh": 10.36
+    },
+    {
+        "state": "California",
+        "kwh": 19.645
+    },
+    {
+        "state": "Colorado",
+        "kwh": 12.515
+    },
+    {
+        "state": "Connecticut",
+        "kwh": 21.045
+    },
+    {
+        "state": "DC",
+        "kwh": 13.305
+    },
+    {
+        "state": "Delaware",
+        "kwh": 12.32
+    },
+    {
+        "state": "Florida",
+        "kwh": 11.695
+    },
+    {
+        "state": "Georgia",
+        "kwh": 12.395
+    },
+    {
+        "state": "Hawaii",
+        "kwh": 31.604999999999997
+    },
+    {
+        "state": "Idaho",
+        "kwh": 11.0
+    },
+    {
+        "state": "Illinois",
+        "kwh": 12.754999999999999
+    },
+    {
+        "state": "Indiana",
+        "kwh": 12.035
+    },
+    {
+        "state": "Iowa",
+        "kwh": 13.865
+    },
+    {
+        "state": "Kansas",
+        "kwh": 12.56
+    },
+    {
+        "state": "Kentucky",
+        "kwh": 10.620000000000001
+    },
+    {
+        "state": "Louisiana",
+        "kwh": 9.78
+    },
+    {
+        "state": "Maine",
+        "kwh": 16.165
+    },
+    {
+        "state": "Maryland",
+        "kwh": 14.07
+    },
+    {
+        "state": "Massachusetts",
+        "kwh": 19.835
+    },
+    {
+        "state": "Michigan",
+        "kwh": 15.965
+    },
+    {
+        "state": "Minnesota",
+        "kwh": 14.025
+    },
+    {
+        "state": "Mississippi",
+        "kwh": 11.475000000000001
+    },
+    {
+        "state": "Missouri",
+        "kwh": 13.24
+    },
+    {
+        "state": "Montana",
+        "kwh": 11.79
+    },
+    {
+        "state": "Nebraska",
+        "kwh": 11.685
+    },
+    {
+        "state": "Nevada",
+        "kwh": 11.655000000000001
+    },
+    {
+        "state": "New Hampshire",
+        "kwh": 19.465
+    },
+    {
+        "state": "New Jersey",
+        "kwh": 15.8
+    },
+    {
+        "state": "New Mexico",
+        "kwh": 13.39
+    },
+    {
+        "state": "New York",
+        "kwh": 19.03
+    },
+    {
+        "state": "North Carolina",
+        "kwh": 11.155000000000001
+    },
+    {
+        "state": "North Dakota",
+        "kwh": 12.205
+    },
+    {
+        "state": "Ohio",
+        "kwh": 12.655000000000001
+    },
+    {
+        "state": "Oklahoma",
+        "kwh": 10.625
+    },
+    {
+        "state": "Oregon",
+        "kwh": 10.995000000000001
+    },
+    {
+        "state": "Pennsylvania",
+        "kwh": 14.45
+    },
+    {
+        "state": "Rhode Island",
+        "kwh": 17.645
+    },
+    {
+        "state": "South Carolina",
+        "kwh": 12.99
+    },
+    {
+        "state": "South Dakota",
+        "kwh": 12.48
+    },
+    {
+        "state": "Tennessee",
+        "kwh": 10.86
+    },
+    {
+        "state": "Texas",
+        "kwh": 11.254999999999999
+    },
+    {
+        "state": "Utah",
+        "kwh": 11.055
+    },
+    {
+        "state": "Vermont",
+        "kwh": 18.259999999999998
+    },
+    {
+        "state": "Virginia",
+        "kwh": 12.155000000000001
+    },
+    {
+        "state": "Washington",
+        "kwh": 9.87
+    },
+    {
+        "state": "West Virginia",
+        "kwh": 11.629999999999999
+    },
+    {
+        "state": "Wisconsin",
+        "kwh": 14.665
+    },
+    {
+        "state": "Wyoming",
+        "kwh": 12.255
+    }
+]
