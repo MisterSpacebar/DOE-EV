@@ -173,83 +173,110 @@ class EVDataAnalyzer:
 
     def compare_manufacturers(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Compare comprehensive statistics across manufacturers"""
-        if self.aggregated_data.empty:
-            return pd.DataFrame(), pd.DataFrame()
+        try:
+            if self.aggregated_data.empty:
+                print("Aggregated data is empty")
+                return pd.DataFrame(), pd.DataFrame()
 
-        # Calculate vehicle-level statistics
-        vehicle_stats = []
-        for vehicle_id in self.aggregated_data['Vehicle_ID'].unique():
-            vehicle_data = self.aggregated_data[self.aggregated_data['Vehicle_ID'] == vehicle_id]
+            # Print debug info
+            print(f"Columns available: {self.aggregated_data.columns.tolist()}")
+            print(f"Number of unique vehicles: {self.aggregated_data['Vehicle_ID'].nunique()}")
 
-            stats = {
-                'Vehicle_ID': vehicle_id,
-                'Manufacturer': vehicle_data['Manufacturer'].iloc[0],
-                'Model': vehicle_data['Model_Name'].iloc[0]
-            }
-
-            # Energy efficiency
-            if 'Total Energy Consumption' in vehicle_data.columns and 'Total Distance' in vehicle_data.columns:
-                total_distance = vehicle_data['Total Distance'].sum()
-                if total_distance > 0:  # Prevent division by zero
-                    stats['Energy_per_Mile'] = (
-                            vehicle_data['Total Energy Consumption'].sum() /
-                            total_distance
-                    )
-
-            # Idle time calculation
-            if 'Driving Time' in vehicle_data.columns and 'Idling Time' in vehicle_data.columns:
+            # Calculate vehicle-level statistics
+            vehicle_stats = []
+            for vehicle_id in self.aggregated_data['Vehicle_ID'].unique():
                 try:
-                    # Convert time columns to hours if they're datetime
-                    driving_time = vehicle_data['Driving Time']
-                    idling_time = vehicle_data['Idling Time']
+                    vehicle_data = self.aggregated_data[self.aggregated_data['Vehicle_ID'] == vehicle_id]
 
-                    # Convert if datetime
-                    if driving_time.dtype == 'datetime64[ns]':
-                        driving_time = pd.to_timedelta(driving_time).dt.total_seconds() / 3600
-                    if idling_time.dtype == 'datetime64[ns]':
-                        idling_time = pd.to_timedelta(idling_time).dt.total_seconds() / 3600
+                    stats = {
+                        'Vehicle_ID': vehicle_id,
+                        'Manufacturer': vehicle_data['Manufacturer'].iloc[
+                            0] if 'Manufacturer' in vehicle_data else 'Unknown',
+                        'Model': vehicle_data['Model_Name'].iloc[0] if 'Model_Name' in vehicle_data else 'Unknown'
+                    }
 
-                    # Calculate total time and idle percentage
-                    total_time = driving_time.sum() + idling_time.sum()
-                    if total_time > 0:  # Prevent division by zero
-                        stats['Idle_Percentage'] = (idling_time.sum() / total_time * 100)
-                    else:
-                        stats['Idle_Percentage'] = 0
+                    # Energy efficiency with error handling
+                    if all(col in vehicle_data.columns for col in ['Total Energy Consumption', 'Total Distance']):
+                        try:
+                            total_distance = vehicle_data['Total Distance'].astype(float).sum()
+                            total_energy = vehicle_data['Total Energy Consumption'].astype(float).sum()
+                            if total_distance > 0:
+                                stats['Energy_per_Mile'] = total_energy / total_distance
+                            else:
+                                stats['Energy_per_Mile'] = 0
+                        except Exception as e:
+                            print(f"Error calculating energy efficiency for vehicle {vehicle_id}: {e}")
+                            stats['Energy_per_Mile'] = 0
+
+                    # Idle time calculation with error handling
+                    if all(col in vehicle_data.columns for col in ['Driving Time', 'Idling Time']):
+                        try:
+                            driving_time = vehicle_data['Driving Time']
+                            idling_time = vehicle_data['Idling Time']
+
+                            # Ensure numeric type
+                            if driving_time.dtype == 'datetime64[ns]':
+                                driving_time = pd.to_timedelta(driving_time).dt.total_seconds() / 3600
+                            if idling_time.dtype == 'datetime64[ns]':
+                                idling_time = pd.to_timedelta(idling_time).dt.total_seconds() / 3600
+
+                            driving_time = pd.to_numeric(driving_time, errors='coerce')
+                            idling_time = pd.to_numeric(idling_time, errors='coerce')
+
+                            total_time = driving_time.sum() + idling_time.sum()
+                            if total_time > 0:
+                                stats['Idle_Percentage'] = (idling_time.sum() / total_time * 100)
+                            else:
+                                stats['Idle_Percentage'] = 0
+                        except Exception as e:
+                            print(f"Error calculating idle time for vehicle {vehicle_id}: {e}")
+                            stats['Idle_Percentage'] = 0
+
+                    vehicle_stats.append(stats)
                 except Exception as e:
-                    print(f"Error calculating idle time for vehicle {vehicle_id}: {e}")
-                    stats['Idle_Percentage'] = 0
+                    print(f"Error processing vehicle {vehicle_id}: {e}")
+                    continue
 
-            vehicle_stats.append(stats)
+            if not vehicle_stats:
+                print("No vehicle stats were generated")
+                return pd.DataFrame(), pd.DataFrame()
 
-        # Create vehicle stats DataFrame
-        vehicle_stats_df = pd.DataFrame(vehicle_stats)
+            # Create vehicle stats DataFrame
+            vehicle_stats_df = pd.DataFrame(vehicle_stats)
+            print(f"Vehicle stats columns: {vehicle_stats_df.columns.tolist()}")
 
-        # Calculate manufacturer summary only if we have valid data
-        if not vehicle_stats_df.empty and 'Manufacturer' in vehicle_stats_df.columns:
-            # Get numeric columns for aggregation
-            numeric_cols = vehicle_stats_df.select_dtypes(include=['float64', 'int64']).columns
-            agg_columns = {}
+            # Calculate manufacturer summary with error handling
+            if not vehicle_stats_df.empty and 'Manufacturer' in vehicle_stats_df.columns:
+                try:
+                    numeric_cols = vehicle_stats_df.select_dtypes(include=['float64', 'int64']).columns
+                    agg_columns = {}
 
-            if 'Vehicle_ID' in vehicle_stats_df.columns:
-                agg_columns['Vehicle_ID'] = 'count'
-            if 'Energy_per_Mile' in numeric_cols:
-                agg_columns['Energy_per_Mile'] = ['mean', 'std', 'min', 'max']
-            if 'Idle_Percentage' in numeric_cols:
-                agg_columns['Idle_Percentage'] = ['mean', 'std', 'min', 'max']
+                    if 'Vehicle_ID' in vehicle_stats_df.columns:
+                        agg_columns['Vehicle_ID'] = 'count'
+                    if 'Energy_per_Mile' in numeric_cols:
+                        agg_columns['Energy_per_Mile'] = ['mean', 'std', 'min', 'max']
+                    if 'Idle_Percentage' in numeric_cols:
+                        agg_columns['Idle_Percentage'] = ['mean', 'std', 'min', 'max']
 
-            manufacturer_summary = vehicle_stats_df.groupby('Manufacturer').agg(agg_columns).round(2)
+                    manufacturer_summary = vehicle_stats_df.groupby('Manufacturer').agg(agg_columns).round(2)
 
-            # Flatten column names if we have multi-level columns
-            if isinstance(manufacturer_summary.columns, pd.MultiIndex):
-                manufacturer_summary.columns = [
-                    'Vehicle_Count' if col == ('Vehicle_ID', 'count')
-                    else f"{col[0]}_{col[1].capitalize()}"
-                    for col in manufacturer_summary.columns
-                ]
-        else:
-            manufacturer_summary = pd.DataFrame()
+                    if isinstance(manufacturer_summary.columns, pd.MultiIndex):
+                        manufacturer_summary.columns = [
+                            'Vehicle_Count' if col == ('Vehicle_ID', 'count')
+                            else f"{col[0]}_{col[1].capitalize()}"
+                            for col in manufacturer_summary.columns
+                        ]
+                    return vehicle_stats_df, manufacturer_summary
+                except Exception as e:
+                    print(f"Error creating manufacturer summary: {e}")
+                    return vehicle_stats_df, pd.DataFrame()
+            else:
+                print("Vehicle stats DataFrame is empty or missing Manufacturer column")
+                return vehicle_stats_df, pd.DataFrame()
 
-        return vehicle_stats_df, manufacturer_summary
+        except Exception as e:
+            print(f"Major error in compare_manufacturers: {e}")
+            return pd.DataFrame(), pd.DataFrame()
 
     def generate_statistical_summary(self) -> Dict:
         """Generate comprehensive statistical summary"""
