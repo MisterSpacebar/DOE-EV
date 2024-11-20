@@ -148,128 +148,177 @@ def main():
                     st.metric("Avg Rated Energy (kWh)", f"{fleet_summary['Avg_Rated_Energy']:.1f}")
 
 
+
         elif analysis_type == "Comparative Analysis":
 
             st.header("Comparative Analysis")
 
-            # Get comparative statistics
+            try:
 
-            vehicle_stats, manufacturer_stats = fleet_analyzer.compare_manufacturers()
+                # Get comparative statistics with error handling
 
-            # Display manufacturer summary
+                with st.spinner("Analyzing manufacturer data..."):
 
-            st.subheader("Manufacturer Summary Statistics")
+                    vehicle_stats, manufacturer_stats = fleet_analyzer.compare_manufacturers()
 
-            st.dataframe(manufacturer_stats)
+                    # Check if we have valid data
 
-            # Display detailed comparisons
+                    if vehicle_stats.empty:
+                        st.warning("No vehicle statistics are available.")
 
-            st.subheader("Detailed Vehicle Statistics")
+                        st.stop()
 
-            metric_option = st.selectbox(
+                    if manufacturer_stats.empty:
+                        st.warning("No manufacturer summary statistics are available.")
 
-                "Select Metric to Analyze",
+                    # Display manufacturer summary
 
-                ["Energy Efficiency", "Trip Patterns", "Idle Time", "Temperature Impact"]
+                    st.subheader("Manufacturer Summary Statistics")
 
-            )
+                    if not manufacturer_stats.empty:
+                        st.dataframe(manufacturer_stats)
 
-            if metric_option == "Energy Efficiency":
+                    # Display detailed comparisons
 
-                st.write("### Energy Efficiency Analysis")
+                    st.subheader("Detailed Vehicle Statistics")
 
-                # Show energy per mile stats
+                    metric_option = st.selectbox(
 
-                efficiency_stats = vehicle_stats[
+                        "Select Metric to Analyze",
 
-                    ['Manufacturer', 'Model', 'Vehicle_ID', 'Energy_per_Mile']
-
-                ].sort_values('Energy_per_Mile')
-
-                st.write("Energy Efficiency Rankings (kWh/mile):")
-
-                st.dataframe(efficiency_stats)
-
-                # Show visualization
-
-                visuals = fleet_analyzer.generate_comparative_visualizations()
-
-                if 'energy_efficiency' in visuals:
-                    st.plotly_chart(visuals['energy_efficiency'], use_container_width=True)
-
-
-            elif metric_option == "Trip Patterns":
-
-                st.write("### Trip Pattern Analysis")
-
-                # Show trip statistics
-
-                trip_cols = [col for col in vehicle_stats.columns if 'Distance' in col]
-
-                trip_stats = vehicle_stats[
-
-                    ['Manufacturer', 'Model', 'Vehicle_ID'] + trip_cols
-
-                    ]
-
-                st.dataframe(trip_stats)
-
-                # Show visualization
-
-                visuals = fleet_analyzer.generate_comparative_visualizations()
-
-                if 'trip_distance' in visuals:
-                    st.plotly_chart(visuals['trip_distance'], use_container_width=True)
-
-
-            elif metric_option == "Idle Time":
-
-                st.write("### Idle Time Analysis")
-
-                # Show idle time statistics
-
-                idle_stats = vehicle_stats[
-
-                    ['Manufacturer', 'Model', 'Vehicle_ID', 'Idle_Percentage']
-
-                ].sort_values('Idle_Percentage')
-
-                st.write("Idle Time Rankings (% of total time):")
-
-                st.dataframe(idle_stats)
-
-                # Show visualization
-
-                visuals = fleet_analyzer.generate_comparative_visualizations()
-
-                if 'idle_comparison' in visuals:
-                    st.plotly_chart(visuals['idle_comparison'], use_container_width=True)
-
-
-            else:  # Temperature Impact
-
-                st.write("### Temperature Impact Analysis")
-
-                temp_cols = [col for col in vehicle_stats.columns if 'Temperature' in col]
-
-                if temp_cols:
-                    temp_stats = vehicle_stats[
-
-                        ['Manufacturer', 'Model', 'Vehicle_ID'] + temp_cols
-
-                        ]
-
-                    st.dataframe(temp_stats)
-
-                    # Show energy vs temperature relationship
-
-                    st.plotly_chart(
-
-                        fleet_analyzer.generate_comparative_visualizations()['energy_distance_scatter'],
-
-                        use_container_width=True
+                        ["Energy Efficiency", "Trip Patterns", "Idle Time", "Temperature Impact"]
 
                     )
+
+                    if metric_option == "Energy Efficiency":
+
+                        st.write("### Energy Efficiency Analysis")
+
+                        # Check if required columns exist
+
+                        if all(col in vehicle_stats.columns for col in
+                               ['Manufacturer', 'Model', 'Vehicle_ID', 'Energy_per_Mile']):
+
+                            efficiency_stats = vehicle_stats[
+
+                                ['Manufacturer', 'Model', 'Vehicle_ID', 'Energy_per_Mile']
+
+                            ].sort_values('Energy_per_Mile')
+
+                            st.write("Energy Efficiency Rankings (kWh/mile):")
+
+                            st.dataframe(efficiency_stats)
+
+                            # Show visualization
+
+                            visuals = fleet_analyzer.generate_comparative_visualizations()
+
+                            if 'energy_efficiency' in visuals:
+                                st.plotly_chart(visuals['energy_efficiency'], use_container_width=True)
+
+                        else:
+
+                            st.warning("Energy efficiency data is not available.")
+
+
+                    elif metric_option == "Trip Patterns":
+
+                        st.write("### Trip Pattern Analysis")
+
+                        # Show trip statistics if available
+
+                        trip_cols = [col for col in vehicle_stats.columns if 'Distance' in col]
+
+                        if trip_cols:
+
+                            trip_stats = vehicle_stats[
+
+                                ['Manufacturer', 'Model', 'Vehicle_ID'] + trip_cols
+
+                                ]
+
+                            st.dataframe(trip_stats)
+
+                            # Show visualization
+
+                            visuals = fleet_analyzer.generate_comparative_visualizations()
+
+                            if 'trip_distance' in visuals:
+                                st.plotly_chart(visuals['trip_distance'], use_container_width=True)
+
+                        else:
+
+                            st.warning("Trip pattern data is not available.")
+
+
+                    elif metric_option == "Idle Time":
+
+                        st.write("### Idle Time Analysis")
+
+                        # Check if idle percentage data is available
+
+                        if 'Idle_Percentage' in vehicle_stats.columns:
+
+                            idle_stats = vehicle_stats[
+
+                                ['Manufacturer', 'Model', 'Vehicle_ID', 'Idle_Percentage']
+
+                            ].sort_values('Idle_Percentage')
+
+                            st.write("Idle Time Rankings (% of total time):")
+
+                            st.dataframe(idle_stats)
+
+                            # Show visualization
+
+                            visuals = fleet_analyzer.generate_comparative_visualizations()
+
+                            if 'idle_comparison' in visuals:
+                                st.plotly_chart(visuals['idle_comparison'], use_container_width=True)
+
+                        else:
+
+                            st.warning("Idle time data is not available.")
+
+
+                    else:  # Temperature Impact
+
+                        st.write("### Temperature Impact Analysis")
+
+                        temp_cols = [col for col in vehicle_stats.columns if 'Temperature' in col]
+
+                        if temp_cols:
+
+                            temp_stats = vehicle_stats[
+
+                                ['Manufacturer', 'Model', 'Vehicle_ID'] + temp_cols
+
+                                ]
+
+                            st.dataframe(temp_stats)
+
+                            # Show energy vs temperature relationship
+
+                            visuals = fleet_analyzer.generate_comparative_visualizations()
+
+                            if 'energy_distance_scatter' in visuals:
+
+                                st.plotly_chart(visuals['energy_distance_scatter'], use_container_width=True)
+
+                            else:
+
+                                st.warning("Temperature impact visualization is not available.")
+
+                        else:
+
+                            st.warning("Temperature data is not available.")
+
+
+            except Exception as e:
+
+                st.error(f"An error occurred during comparative analysis. Please check the data and try again.")
+
+                st.write(f"Error details: {str(e)}")
 
 
         else:  # Statistical Summary
