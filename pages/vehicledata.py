@@ -111,19 +111,22 @@ class VehicleDataAnalyzer:
                 yaxis_title='Total Distance (miles)'
             )
 
-        # Energy vs Distance
-        energy_column = next(
-            (col for col in self.df.columns if 'energy' in col.lower() or 'consumption' in col.lower()), None)
-        if distance_column and energy_column:
-            visualizations['energy_distance'] = px.scatter(
-                self.df,
-                x=distance_column,
-                y=energy_column,
-                title='Total Energy Consumption vs Total Distance'
-            ).update_layout(
-                xaxis_title='Total Distance (miles)',
-                yaxis_title='Total Energy Consumption'
-            )
+            # Energy vs Distance
+            energy_column = next(
+                (col for col in self.df.columns if 'energy' in col.lower() or 'consumption' in col.lower()), None)
+            if distance_column and energy_column:
+                fig = px.scatter(
+                    self.df,
+                    x=distance_column,
+                    y=energy_column,
+                    title='Total Energy Consumption vs Total Distance',
+                    trendline='ols'
+                ).update_layout(
+                    xaxis_title='Total Distance (miles)',
+                    yaxis_title='Total Energy Consumption'
+                )
+                fig.update_traces(line=dict(color='yellow'))  # Set trendline color to yellow
+                visualizations['energy_distance'] = fig
 
         # Driving vs Idling Time
         driving_time_column = next((col for col in self.df.columns if 'driving time' in col.lower()), None)
@@ -153,12 +156,15 @@ class VehicleDataAnalyzer:
 
     def create_custom_scatter(self, x_column: str, y_column: str):
         """Create custom scatter plot based on user-selected columns"""
-        return px.scatter(
+        fig = px.scatter(
             self.df,
             x=x_column,
             y=y_column,
-            title=f'{y_column} vs {x_column}'
+            title=f'{y_column} vs {x_column}',
+            trendline='ols'
         )
+        fig.update_traces(line=dict(color='yellow'))  # Set trendline color to yellow
+        return fig
 
     def get_numeric_columns(self):
         """Get list of numeric columns for custom plotting"""
