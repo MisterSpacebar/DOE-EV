@@ -119,6 +119,232 @@ class EVDataAnalyzer:
 
         return summary
 
+    def analyze_by_manufacturer_and_weight(self) -> Dict:
+        """Enhanced analysis by manufacturer and weight class"""
+        print("\nStarting manufacturer and weight class analysis...")
+
+        if self.aggregated_data.empty:
+            print("No data available for analysis")
+            return {}
+
+        results = {}
+
+        def calculate_category_metrics(group_by_col):
+            df = self.aggregated_data.copy()
+
+            # Convert numeric columns to float
+            numeric_columns = ['Total Distance', 'Total Energy Consumption', 'Driving Time', 'Idling Time']
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+            # Convert temperature if it's an object
+            if 'Average Ambient Temperature' in df.columns and df['Average Ambient Temperature'].dtype == 'object':
+                df['Average Ambient Temperature'] = pd.to_numeric(df['Average Ambient Temperature'], errors='coerce')
+
+            try:
+                # Group by category and calculate basic metrics
+                grouped = df.groupby(group_by_col)
+
+                metrics = {}
+
+                # Vehicle count
+                metrics['Total_Vehicles'] = grouped['Vehicle_ID'].nunique()
+
+                # Distance metrics
+                if 'Total Distance' in df.columns:
+                    metrics['Total_Distance'] = grouped['Total Distance'].sum()
+                    metrics['Avg_Distance_Per_Trip'] = grouped['Total Distance'].mean()
+
+                # Energy metrics
+                if 'Total Energy Consumption' in df.columns:
+                    metrics['Total_Energy'] = grouped['Total Energy Consumption'].sum()
+                    # Calculate efficiency only if both columns exist
+                    if 'Total Distance' in df.columns:
+                        metrics['Energy_Efficiency'] = (
+                                grouped['Total Energy Consumption'].sum() /
+                                grouped['Total Distance'].sum()
+                        ).round(3)
+
+                # Time metrics
+                if all(col in df.columns for col in ['Driving Time', 'Idling Time']):
+                    driving_time = grouped['Driving Time'].sum()
+                    idling_time = grouped['Idling Time'].sum()
+                    total_time = driving_time + idling_time
+
+                    metrics['Total_Operating_Hours'] = total_time
+                    metrics['Driving_Hours'] = driving_time
+                    metrics['Idling_Hours'] = idling_time
+                    metrics['Idle_Percentage'] = ((idling_time / total_time) * 100).round(2)
+
+                # Temperature metrics
+                if 'Average Ambient Temperature' in df.columns:
+                    metrics['Avg_Temperature'] = grouped['Average Ambient Temperature'].mean()
+                    metrics['Min_Temperature'] = grouped['Average Ambient Temperature'].min()
+                    metrics['Max_Temperature'] = grouped['Average Ambient Temperature'].max()
+
+                # Convert metrics to DataFrame
+                metrics_df = pd.DataFrame(metrics).round(2)
+                print(f"\nMetrics calculated for {group_by_col}:")
+                print(metrics_df.head())
+                return metrics_df
+
+            except Exception as e:
+                print(f"Error calculating metrics for {group_by_col}: {str(e)}")
+                return pd.DataFrame()
+
+        # Calculate metrics for both categories
+        try:
+            manufacturer_metrics = calculate_category_metrics('Manufacturer')
+            if not manufacturer_metrics.empty:
+                results['manufacturer'] = manufacturer_metrics
+                print(f"Manufacturer metrics shape: {manufacturer_metrics.shape}")
+        except Exception as e:
+            print(f"Error in manufacturer analysis: {str(e)}")
+
+        try:
+            weight_metrics = calculate_category_metrics('Weight_Class')
+            if not weight_metrics.empty:
+                results['weight_class'] = weight_metrics
+                print(f"Weight class metrics shape: {weight_metrics.shape}")
+        except Exception as e:
+            print(f"Error in weight class analysis: {str(e)}")
+
+        # Add debugging output
+        print("\nResults keys:", results.keys())
+        if 'manufacturer' in results:
+            print("\nManufacturer metrics columns:", results['manufacturer'].columns.tolist())
+        if 'weight_class' in results:
+            print("\nWeight class metrics columns:", results['weight_class'].columns.tolist())
+
+        return results
+
+    def generate_category_visualizations(self, category: str):
+        """Enhanced visualizations for manufacturer or weight class analysis"""
+        if self.aggregated_data.empty or category not in ['Manufacturer', 'Weight_Class']:
+            return {}
+
+        visuals = {}
+        df = self.aggregated_data.copy()
+
+        # Convert numeric columns
+        numeric_cols = ['Total Energy Consumption', 'Total Distance', 'Average Ambient Temperature',
+                        'Driving Time', 'Idling Time']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        try:
+            # 1. Energy Efficiency Analysis
+            efficiency_data = []
+            for name, group in df.groupby([category, 'Vehicle_ID']):
+                try:
+                    energy_sum = group['Total Energy Consumption'].sum()
+                    distance_sum = group['Total Distance'].sum()
+                    temp_mean = group['Average Ambient Temperature'].mean()
+
+                    efficiency_data.append({
+                        category: name[0],
+                        'Vehicle_ID': name[1],
+                        'Total Energy Consumption': energy_sum,
+                        'Total Distance': distance_sum,
+                        'Average Ambient Temperature': temp_mean,
+                        'Energy_per_Mile': energy_sum / distance_sum if distance_sum > 0 else None
+                    })
+                except Exception as e:
+                    print(f"Error processing group {name}: {e}")
+                    continue
+
+            if efficiency_data:
+                efficiency_df = pd.DataFrame(efficiency_data)
+                if not efficiency_df.empty:
+                    visuals['efficiency_temp'] = px.scatter(
+                        efficiency_df,
+                        x='Average Ambient Temperature',
+                        y='Energy_per_Mile',
+                        color=category,
+                        title=f'Energy Efficiency vs Temperature by {category}',
+                        trendline="ols"
+                    )
+
+            # 2. Operational Patterns
+            operational_data = []
+            for cat, group in df.groupby(category):
+                try:
+                    operational_data.append({
+                        category: cat,
+                        'Driving Time': group['Driving Time'].sum(),
+                        'Idling Time': group['Idling Time'].sum(),
+                        'Total Distance': group['Total Distance'].sum()
+                    })
+                except Exception as e:
+                    print(f"Error processing operational data for {cat}: {e}")
+                    continue
+
+            if operational_data:
+                operational_df = pd.DataFrame(operational_data)
+                if not operational_df.empty:
+                    visuals['operation_patterns'] = px.bar(
+                        operational_df,
+                        x=category,
+                        y=['Driving Time', 'Idling Time'],
+                        title=f'Operational Time Distribution by {category}',
+                        barmode='stack'
+                    )
+
+            # 3. Performance Matrix
+            # 3. Performance Matrix
+            performance_data = []
+            for cat, group in df.groupby(category):
+                try:
+                    soc_mean = group['SOC Used'].mean()
+                    # Only add to performance data if we have valid values
+                    if pd.notna(soc_mean):  # Check for NaN
+                        performance_data.append({
+                            category: cat,
+                            'SOC Used': soc_mean,
+                            'Total Distance': group['Total Distance'].mean(),
+                            'Total Energy Consumption': group['Total Energy Consumption'].mean()
+                        })
+                except Exception as e:
+                    print(f"Error processing performance data for {cat}: {e}")
+                    continue
+
+            if performance_data:
+                performance_df = pd.DataFrame(performance_data)
+                if not performance_df.empty:
+                    # Fill any remaining NaN values with a default size
+                    performance_df['SOC Used'] = performance_df['SOC Used'].fillna(performance_df['SOC Used'].mean())
+
+                    visuals['performance_matrix'] = px.scatter(
+                        performance_df,
+                        x='Total Distance',
+                        y='Total Energy Consumption',
+                        size='SOC Used',
+                        size_max=50,  # Add maximum size for bubbles
+                        color=category,
+                        title=f'Performance Matrix by {category}',
+                        labels={
+                            'Total Distance': 'Average Distance per Trip (miles)',
+                            'Total Energy Consumption': 'Average Energy per Trip (kWh)',
+                            'SOC Used': 'Average SOC Used (%)'
+                        }
+                    )
+
+            # 4. Temperature Impact
+            if 'Average Ambient Temperature' in df.columns:
+                visuals['temperature_impact'] = px.box(
+                    df,
+                    x=category,
+                    y='Average Ambient Temperature',
+                    title=f'Temperature Distribution by {category}'
+                )
+
+        except Exception as e:
+            print(f"Error generating visualizations: {e}")
+
+        return visuals
+
     def analyze_by_category(self, category: str) -> pd.DataFrame:
         """Generate statistics grouped by a specific category"""
         if self.aggregated_data.empty or category not in self.aggregated_data.columns:

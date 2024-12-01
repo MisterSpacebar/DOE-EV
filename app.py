@@ -147,6 +147,44 @@ def main():
                 if 'Avg_Rated_Energy' in fleet_summary:
                     st.metric("Avg Rated Energy (kWh)", f"{fleet_summary['Avg_Rated_Energy']:.1f}")
 
+            # Add category analysis section
+            st.subheader("Fleet Category Analysis")
+            category = st.selectbox(
+                "Select Analysis Category",
+                ["Manufacturer", "Weight Class"]
+            )
+
+            # Get analysis results
+            analysis_results = fleet_analyzer.analyze_by_manufacturer_and_weight()
+
+            if analysis_results:
+                if category == "Manufacturer":
+                    st.write("### Manufacturer Analysis")
+                    st.dataframe(analysis_results['manufacturer'])
+                else:
+                    st.write("### Weight Class Analysis")
+                    st.dataframe(analysis_results['weight_class'])
+
+                # Display visualizations
+                visuals = fleet_analyzer.generate_category_visualizations(
+                    'Manufacturer' if category == "Manufacturer" else 'Weight_Class'
+                )
+
+                if visuals:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if 'efficiency_temp' in visuals:
+                            st.plotly_chart(visuals['efficiency_temp'], use_container_width=True)
+                        if 'operation_patterns' in visuals:
+                            st.plotly_chart(visuals['operation_patterns'], use_container_width=True)
+                    with col2:
+                        if 'performance_matrix' in visuals:
+                            st.plotly_chart(visuals['performance_matrix'], use_container_width=True)
+                        if 'temperature_impact' in visuals:
+                            st.plotly_chart(visuals['temperature_impact'], use_container_width=True)
+            else:
+                st.warning("No analysis data available for the selected category.")
+
 
 
         elif analysis_type == "Comparative Analysis":
