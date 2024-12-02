@@ -123,101 +123,135 @@ class EVDataAnalyzer:
         """Enhanced analysis by manufacturer and weight class"""
         print("\nStarting manufacturer and weight class analysis...")
 
-        if self.aggregated_data.empty:
-            print("No data available for analysis")
-            return {}
+        try:
+            if self.aggregated_data is None or self.aggregated_data.empty:
+                print("No data available for analysis")
+                return {}
 
-        results = {}
+            results = {}
 
-        def calculate_category_metrics(group_by_col):
-            df = self.aggregated_data.copy()
+            def calculate_category_metrics(category_col: str) -> Optional[pd.DataFrame]:
+                """Inner function to calculate metrics for a category"""
+                try:
+                    if category_col not in self.aggregated_data.columns:
+                        print(f"Column {category_col} not found in data")
+                        return None
 
-            # Convert numeric columns to float
-            numeric_columns = ['Total Distance', 'Total Energy Consumption', 'Driving Time', 'Idling Time']
-            for col in numeric_columns:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    df = self.aggregated_data.copy()
 
-            # Convert temperature if it's an object
-            if 'Average Ambient Temperature' in df.columns and df['Average Ambient Temperature'].dtype == 'object':
-                df['Average Ambient Temperature'] = pd.to_numeric(df['Average Ambient Temperature'], errors='coerce')
+                    # Convert and clean numeric columns
+                    numeric_columns = [
+                        'Total Distance', 'Total Energy Consumption',
+                        'Driving Time', 'Idling Time'
+                    ]
 
-            try:
-                # Group by category and calculate basic metrics
-                grouped = df.groupby(group_by_col)
+                    for col in numeric_columns:
+                        if col in df.columns:
+                            try:
+                                df[col] = pd.to_numeric(df[col], errors='coerce')
+                            except Exception as e:
+                                print(f"Error converting {col}: {e}")
+                                df[col] = 0
 
-                metrics = {}
+                    # Handle temperature separately
+                    if 'Average Ambient Temperature' in df.columns:
+                        df['Average Ambient Temperature'] = pd.to_numeric(
+                            df['Average Ambient Temperature'],
+                            errors='coerce'
+                        )
 
-                # Vehicle count
-                metrics['Total_Vehicles'] = grouped['Vehicle_ID'].nunique()
+                    # Group by category and calculate metrics
+                    grouped = df.groupby(category_col)
+                    metrics = pd.DataFrame()
 
-                # Distance metrics
-                if 'Total Distance' in df.columns:
-                    metrics['Total_Distance'] = grouped['Total Distance'].sum()
-                    metrics['Avg_Distance_Per_Trip'] = grouped['Total Distance'].mean()
+                    # Vehicle count
+                    metrics['Total_Vehicles'] = grouped['Vehicle_ID'].nunique()
 
-                # Energy metrics
-                if 'Total Energy Consumption' in df.columns:
-                    metrics['Total_Energy'] = grouped['Total Energy Consumption'].sum()
-                    # Calculate efficiency only if both columns exist
+                    # Distance metrics (with error handling)
                     if 'Total Distance' in df.columns:
-                        metrics['Energy_Efficiency'] = (
-                                grouped['Total Energy Consumption'].sum() /
-                                grouped['Total Distance'].sum()
-                        ).round(3)
+                        try:
+                            metrics['Total_Distance'] = grouped['Total Distance'].sum()
+                            metrics['Avg_Distance_Per_Trip'] = grouped['Total Distance'].mean()
+                        except Exception as e:
+                            print(f"Error calculating distance metrics: {e}")
+                            metrics['Total_Distance'] = 0
+                            metrics['Avg_Distance_Per_Trip'] = 0
 
-                # Time metrics
-                if all(col in df.columns for col in ['Driving Time', 'Idling Time']):
-                    driving_time = grouped['Driving Time'].sum()
-                    idling_time = grouped['Idling Time'].sum()
-                    total_time = driving_time + idling_time
+                    # Energy metrics
+                    if 'Total Energy Consumption' in df.columns:
+                        try:
+                            metrics['Total_Energy'] = grouped['Total Energy Consumption'].sum()
+                            if 'Total Distance' in df.columns:
+                                energy_sum = grouped['Total Energy Consumption'].sum()
+                                distance_sum = grouped['Total Distance'].sum()
+                                metrics['Energy_Efficiency'] = (
+                                        energy_sum / distance_sum
+                                ).where(distance_sum > 0, 0).round(3)
+                        except Exception as e:
+                            print(f"Error calculating energy metrics: {e}")
+                            metrics['Total_Energy'] = 0
+                            metrics['Energy_Efficiency'] = 0
 
-                    metrics['Total_Operating_Hours'] = total_time
-                    metrics['Driving_Hours'] = driving_time
-                    metrics['Idling_Hours'] = idling_time
-                    metrics['Idle_Percentage'] = ((idling_time / total_time) * 100).round(2)
+                    # Time metrics
+                    time_cols = ['Driving Time', 'Idling Time']
+                    if all(col in df.columns for col in time_cols):
+                        try:
+                            metrics['Total_Operating_Hours'] = (
+                                    grouped['Driving Time'].sum() +
+                                    grouped['Idling Time'].sum()
+                            )
+                            metrics['Driving_Hours'] = grouped['Driving Time'].sum()
+                            metrics['Idling_Hours'] = grouped['Idling Time'].sum()
 
-                # Temperature metrics
-                if 'Average Ambient Temperature' in df.columns:
-                    metrics['Avg_Temperature'] = grouped['Average Ambient Temperature'].mean()
-                    metrics['Min_Temperature'] = grouped['Average Ambient Temperature'].min()
-                    metrics['Max_Temperature'] = grouped['Average Ambient Temperature'].max()
+                            total_time = metrics['Total_Operating_Hours']
+                            idle_time = metrics['Idling_Hours']
+                            metrics['Idle_Percentage'] = (
+                                (idle_time / total_time * 100)
+                                .where(total_time > 0, 0)
+                                .round(2)
+                            )
+                        except Exception as e:
+                            print(f"Error calculating time metrics: {e}")
+                            for col in ['Total_Operating_Hours', 'Driving_Hours',
+                                        'Idling_Hours', 'Idle_Percentage']:
+                                metrics[col] = 0
 
-                # Convert metrics to DataFrame
-                metrics_df = pd.DataFrame(metrics).round(2)
-                print(f"\nMetrics calculated for {group_by_col}:")
-                print(metrics_df.head())
-                return metrics_df
+                    # Temperature metrics
+                    if 'Average Ambient Temperature' in df.columns:
+                        try:
+                            temp_stats = grouped['Average Ambient Temperature'].agg([
+                                'mean', 'min', 'max'
+                            ])
+                            metrics['Avg_Temperature'] = temp_stats['mean'].round(2)
+                            metrics['Min_Temperature'] = temp_stats['min'].round(2)
+                            metrics['Max_Temperature'] = temp_stats['max'].round(2)
+                        except Exception as e:
+                            print(f"Error calculating temperature metrics: {e}")
+                            for col in ['Avg_Temperature', 'Min_Temperature',
+                                        'Max_Temperature']:
+                                metrics[col] = 0
 
-            except Exception as e:
-                print(f"Error calculating metrics for {group_by_col}: {str(e)}")
-                return pd.DataFrame()
+                    return metrics.round(2)
 
-        # Calculate metrics for both categories
-        try:
+                except Exception as e:
+                    print(f"Error in calculate_category_metrics for {category_col}: {e}")
+                    return None
+
+            # Calculate metrics for manufacturers
             manufacturer_metrics = calculate_category_metrics('Manufacturer')
-            if not manufacturer_metrics.empty:
+            if manufacturer_metrics is not None and not manufacturer_metrics.empty:
                 results['manufacturer'] = manufacturer_metrics
-                print(f"Manufacturer metrics shape: {manufacturer_metrics.shape}")
-        except Exception as e:
-            print(f"Error in manufacturer analysis: {str(e)}")
 
-        try:
+            # Calculate metrics for weight classes
             weight_metrics = calculate_category_metrics('Weight_Class')
-            if not weight_metrics.empty:
+            if weight_metrics is not None and not weight_metrics.empty:
                 results['weight_class'] = weight_metrics
-                print(f"Weight class metrics shape: {weight_metrics.shape}")
+
+            return results
+
         except Exception as e:
-            print(f"Error in weight class analysis: {str(e)}")
-
-        # Add debugging output
-        print("\nResults keys:", results.keys())
-        if 'manufacturer' in results:
-            print("\nManufacturer metrics columns:", results['manufacturer'].columns.tolist())
-        if 'weight_class' in results:
-            print("\nWeight class metrics columns:", results['weight_class'].columns.tolist())
-
-        return results
+            print(f"Critical error in analyze_by_manufacturer_and_weight: {e}")
+            return {}
 
     def generate_category_visualizations(self, category: str):
         """Enhanced visualizations for manufacturer or weight class analysis"""
