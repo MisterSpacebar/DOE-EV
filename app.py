@@ -425,7 +425,7 @@ def main():
 
                 title="Correlation Matrix of Key Metrics",
 
-                aspect='auto',  # This helps with the aspect ratio
+                # aspect='auto',  # This helps with the aspect ratio
 
                 width=800,  # Increased width
 
