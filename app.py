@@ -359,6 +359,8 @@ def main():
                 st.write(f"Error details: {str(e)}")
 
 
+
+
         else:  # Statistical Summary
 
             st.header("Statistical Summary")
@@ -398,29 +400,72 @@ def main():
 
                 st.write(pd.DataFrame([percentiles]))
 
-            # Show correlations
+            # Show correlations with improved layout
 
             st.subheader("Correlation Analysis")
 
-            correlation_matrix = fleet_analyzer.aggregated_data.select_dtypes(
+            # Get numeric columns and create correlation matrix
 
-                include=['float64', 'int64']
+            numeric_data = fleet_analyzer.aggregated_data.select_dtypes(include=['float64', 'int64'])
 
-            ).corr()
+            # Filter out columns that might not be useful for correlation
 
-            st.plotly_chart(
+            excluded_columns = ['index', 'id', 'year']  # Add any columns you want to exclude
 
-                px.imshow(
+            correlation_columns = [col for col in numeric_data.columns if
+                                   not any(excl in col.lower() for excl in excluded_columns)]
 
-                    correlation_matrix,
+            correlation_matrix = numeric_data[correlation_columns].corr()
 
-                    title="Correlation Matrix of Key Metrics"
+            # Create a larger and more readable correlation heatmap
 
-                ),
+            fig = px.imshow(
 
-                use_container_width=True
+                correlation_matrix,
+
+                title="Correlation Matrix of Key Metrics",
+
+                aspect='auto',  # This helps with the aspect ratio
+
+                width=800,  # Increased width
+
+                height=800,  # Increased height
+
+                color_continuous_scale='RdBu_r',  # Better color scale for correlations
 
             )
+
+            # Update layout for better readability
+
+            fig.update_layout(
+
+                title_x=0.5,  # Center the title
+
+                title_y=0.95,  # Move title up slightly
+
+                font=dict(size=10),  # Increase font size
+
+                xaxis=dict(tickangle=45),  # Angle x-axis labels for better fit
+
+            )
+
+            # Add value annotations on the heatmap
+
+            fig.update_traces(
+
+                text=correlation_matrix.round(2),  # Show correlation values with 2 decimal places
+
+                texttemplate='%{text}',
+
+                textfont={"size": 10},  # Adjust text size
+
+                showscale=True,
+
+            )
+
+            # Display the correlation matrix
+
+            st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
     main()
