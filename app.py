@@ -156,10 +156,11 @@ def main():
 
             # Get analysis results - make sure this matches the actual method name in your EVDataAnalyzer class
             try:
-                if hasattr(fleet_analyzer, 'analyze_by_manufacturer_and_weight'):
-                    analysis_results = fleet_analyzer.analyze_by_manufacturer_and_weight()
+                if hasattr(fleet_analyzer, 'analyze_manufacturers_and_weights'):  # Changed method name here
+                    analysis_results = fleet_analyzer.analyze_manufacturers_and_weights()  # And here
                 else:
                     st.error("Analysis method not found. Please check the implementation.")
+                    st.write(f"Available methods: {dir(fleet_analyzer)}")  # Add debug info
                     analysis_results = {}
 
                 if analysis_results:

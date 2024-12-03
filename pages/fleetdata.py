@@ -119,7 +119,7 @@ class EVDataAnalyzer:
 
         return summary
 
-    def analyze_by_manufacturer_and_weight(self) -> Dict:
+    def analyze_manufacturers_and_weights(self) -> Dict:  # Changed from analyze_by_manufacturer_and_weight
         """Enhanced analysis by manufacturer and weight class"""
         print("\nStarting manufacturer and weight class analysis...")
 
