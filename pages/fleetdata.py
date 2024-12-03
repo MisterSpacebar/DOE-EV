@@ -123,97 +123,112 @@ class EVDataAnalyzer:
         """Enhanced analysis by manufacturer and weight class"""
         print("\nStarting manufacturer and weight class analysis...")
 
-        # Initialize empty results dictionary
-        results = {}
-
         try:
-            # Input validation
-            if self.aggregated_data is None:
-                print("Aggregated data is None")
+            if self.aggregated_data is None or self.aggregated_data.empty:
+                print("No data available for analysis")
                 return {}
 
-            if self.aggregated_data.empty:
-                print("Aggregated data is empty")
-                return {}
+            results = {}
 
-            print(f"Aggregated data shape: {self.aggregated_data.shape}")
-            print(f"Columns available: {self.aggregated_data.columns.tolist()}")
+            def safe_numeric_conversion(df: pd.DataFrame, column: str) -> pd.Series:
+                """Safely convert a column to numeric values"""
+                try:
+                    return pd.to_numeric(df[column], errors='coerce')
+                except Exception as e:
+                    print(f"Error converting {column}: {e}")
+                    return pd.Series([0] * len(df))
 
-            # Basic metrics calculation without grouping
-            def calculate_metrics(df: pd.DataFrame, category_col: str) -> pd.DataFrame:
-                """Calculate metrics for a given category"""
-                if category_col not in df.columns:
-                    print(f"Category column '{category_col}' not found")
-                    return pd.DataFrame()
+            def calculate_category_metrics(category_col: str) -> Optional[pd.DataFrame]:
+                """Inner function to calculate metrics for a category"""
+                if category_col not in self.aggregated_data.columns:
+                    print(f"Column {category_col} not found in data")
+                    return None
 
                 try:
-                    # Prepare numeric columns
-                    df = df.copy()
-                    for col in ['Total Distance', 'Total Energy Consumption', 'Driving Time', 'Idling Time']:
-                        if col in df.columns:
-                            df[col] = pd.to_numeric(df[col], errors='coerce')
+                    df = self.aggregated_data.copy()
+                    metrics = {}
 
                     # Group by category
-                    metrics = {}
                     grouped = df.groupby(category_col)
 
-                    # Basic metrics
+                    # Vehicle count
                     metrics['Total_Vehicles'] = grouped['Vehicle_ID'].nunique()
-                    metrics['Total_Distance'] = grouped['Total Distance'].sum() if 'Total Distance' in df.columns else 0
-                    metrics['Total_Energy'] = grouped[
-                        'Total Energy Consumption'].sum() if 'Total Energy Consumption' in df.columns else 0
 
-                    # Convert to DataFrame early to handle any issues
+                    # Distance metrics
+                    if 'Total Distance' in df.columns:
+                        df['Total Distance'] = safe_numeric_conversion(df, 'Total Distance')
+                        metrics['Total_Distance'] = grouped['Total Distance'].sum()
+                        metrics['Avg_Distance_Per_Trip'] = grouped['Total Distance'].mean()
+
+                    # Energy metrics
+                    if 'Total Energy Consumption' in df.columns:
+                        df['Total Energy Consumption'] = safe_numeric_conversion(df, 'Total Energy Consumption')
+                        metrics['Total_Energy'] = grouped['Total Energy Consumption'].sum()
+
+                        # Calculate efficiency
+                        energy_sums = grouped['Total Energy Consumption'].sum()
+                        distance_sums = grouped['Total Distance'].sum()
+                        metrics['Energy_Efficiency'] = (
+                            energy_sums.div(distance_sums)
+                            .where(distance_sums > 0, 0)
+                            .round(3)
+                        )
+
+                    # Time metrics
+                    time_cols = ['Driving Time', 'Idling Time']
+                    if all(col in df.columns for col in time_cols):
+                        for col in time_cols:
+                            df[col] = safe_numeric_conversion(df, col)
+
+                        metrics['Driving_Hours'] = grouped['Driving Time'].sum()
+                        metrics['Idling_Hours'] = grouped['Idling Time'].sum()
+                        metrics['Total_Operating_Hours'] = metrics['Driving_Hours'] + metrics['Idling_Hours']
+
+                        # Calculate idle percentage
+                        metrics['Idle_Percentage'] = (
+                            (metrics['Idling_Hours'] / metrics['Total_Operating_Hours'] * 100)
+                            .where(metrics['Total_Operating_Hours'] > 0, 0)
+                            .round(2)
+                        )
+
+                    # Temperature metrics
+                    if 'Average Ambient Temperature' in df.columns:
+                        df['Average Ambient Temperature'] = safe_numeric_conversion(df, 'Average Ambient Temperature')
+                        temp_stats = grouped['Average Ambient Temperature'].agg(['mean', 'min', 'max'])
+                        metrics['Avg_Temperature'] = temp_stats['mean'].round(2)
+                        metrics['Min_Temperature'] = temp_stats['min'].round(2)
+                        metrics['Max_Temperature'] = temp_stats['max'].round(2)
+
+                    # Convert all metrics to DataFrame
                     metrics_df = pd.DataFrame(metrics)
-                    print(f"Basic metrics calculated for {category_col}")
-                    print(f"Metrics shape: {metrics_df.shape}")
 
-                    # Add efficiency calculations if possible
-                    if all(col in metrics_df.columns for col in ['Total_Energy', 'Total_Distance']):
-                        try:
-                            metrics_df['Energy_Efficiency'] = (
-                                    metrics_df['Total_Energy'] / metrics_df['Total_Distance']
-                            ).where(metrics_df['Total_Distance'] > 0, 0).round(3)
-                        except Exception as e:
-                            print(f"Error calculating efficiency: {e}")
-                            metrics_df['Energy_Efficiency'] = 0
+                    # Handle any NaN values
+                    metrics_df = metrics_df.fillna(0)
 
-                    return metrics_df
+                    return metrics_df.round(2)
 
                 except Exception as e:
-                    print(f"Error in calculate_metrics for {category_col}: {e}")
-                    return pd.DataFrame()
+                    print(f"Error calculating metrics for {category_col}: {e}")
+                    return None
 
-            # Calculate manufacturer metrics
+            # Calculate metrics for manufacturers
             print("Calculating manufacturer metrics...")
-            manufacturer_metrics = calculate_metrics(self.aggregated_data, 'Manufacturer')
-            if not manufacturer_metrics.empty:
+            manufacturer_metrics = calculate_category_metrics('Manufacturer')
+            if manufacturer_metrics is not None:
                 results['manufacturer'] = manufacturer_metrics
-                print(f"Manufacturer metrics calculated, shape: {manufacturer_metrics.shape}")
-            else:
-                print("No manufacturer metrics generated")
+                print("Manufacturer metrics calculated successfully")
 
-            # Calculate weight class metrics
+            # Calculate metrics for weight classes
             print("Calculating weight class metrics...")
-            weight_metrics = calculate_metrics(self.aggregated_data, 'Weight_Class')
-            if not weight_metrics.empty:
+            weight_metrics = calculate_category_metrics('Weight_Class')
+            if weight_metrics is not None:
                 results['weight_class'] = weight_metrics
-                print(f"Weight class metrics calculated, shape: {weight_metrics.shape}")
-            else:
-                print("No weight class metrics generated")
-
-            # Log final results structure
-            print("Final results keys:", list(results.keys()))
-            for key, value in results.items():
-                print(f"{key} shape: {value.shape}")
+                print("Weight class metrics calculated successfully")
 
             return results
 
         except Exception as e:
             print(f"Critical error in analyze_by_manufacturer_and_weight: {e}")
-            print(f"Error type: {type(e)}")
-            print(f"Error details: {str(e)}")
-            # Return empty dict rather than None
             return {}
 
     def generate_category_visualizations(self, category: str):
