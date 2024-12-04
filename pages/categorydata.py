@@ -70,29 +70,40 @@ class CategoryDataAnalyzer:
 
         for filename, df in self.csv_files.items():
             try:
-                file_info = self.file_metadata[
-                    self.file_metadata['filename'] == filename
-                    ].iloc[0]
-
+                file_info = self.file_metadata[self.file_metadata['filename'] == filename].iloc[0]
                 df_copy = df.copy()
+                df_copy = df_copy[df_copy['Total Distance'] > 0]
 
-                # Convert numeric columns
-                df_copy = self._convert_numeric_columns(df_copy)
+                if df_copy.empty:
+                    continue
 
-                # Handle time columns
-                time_columns = ['Driving Time', 'Idling Time']
+                # Calculate trip time with fallback to Total Run Time
+                try:
+                    df_copy['Local Trip Start Time'] = pd.to_datetime(df_copy['Local Trip Start Time'])
+                    df_copy['Local Trip End Time'] = pd.to_datetime(df_copy['Local Trip End Time'])
+                    df_copy['Total Trip Time'] = (df_copy['Local Trip End Time'] - df_copy[
+                        'Local Trip Start Time']).dt.total_seconds() / 3600
+                    # If calculation results in NaT or negative values, use Total Run Time
+                    invalid_times = df_copy['Total Trip Time'].isna() | (df_copy['Total Trip Time'] <= 0)
+                    df_copy.loc[invalid_times, 'Total Trip Time'] = df_copy.loc[invalid_times, 'Total Run Time']
+                except Exception as e:
+                    print(f"Using Total Run Time for {filename}: {e}")
+                    df_copy['Total Trip Time'] = df_copy['Total Run Time']
+
+                # Calculate average speed using the determined total time
+                df_copy['Average Speed'] = df_copy.apply(
+                    lambda row: row['Total Distance'] / row['Total Trip Time']
+                    if row['Total Trip Time'] > 0 else 0,
+                    axis=1
+                ).round(2)
+
+                # Handle other time columns
+                time_columns = ['Driving Time', 'Idling Time', 'Total Trip Time']
                 for col in time_columns:
                     if col in df_copy.columns:
-                        try:
-                            if df_copy[col].dtype == 'timedelta64[ns]':
-                                df_copy[col] = df_copy[col].dt.total_seconds() / 3600
-                            else:
-                                df_copy[col] = pd.to_timedelta(df_copy[col]).dt.total_seconds() / 3600
-                        except Exception as e:
-                            print(f"Could not convert {col} to hours: {e}")
-                            df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce')
+                        df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce').round(4)
 
-                # Add metadata from filename
+                # Add metadata
                 df_copy['Vehicle_ID'] = file_info['vehicle_id']
                 df_copy['Manufacturer'] = file_info['manufacturer']
                 df_copy['Weight_Class'] = file_info['weight_class']
@@ -104,11 +115,7 @@ class CategoryDataAnalyzer:
                 print(f"Error processing {filename}: {e}")
                 continue
 
-        if not all_data:
-            return pd.DataFrame()
-
-        combined_data = pd.concat(all_data, ignore_index=True)
-        return self._convert_numeric_columns(combined_data)  # Ensure final dataset has proper numeric types
+        return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
     def get_category_summary(self, manufacturer: Optional[str] = None, weight_class: Optional[str] = None) -> Dict:
         """Generate summary statistics for filtered data"""
@@ -151,7 +158,6 @@ class CategoryDataAnalyzer:
         if self.aggregated_data.empty:
             return pd.DataFrame()
 
-        # Filter data
         filtered_data = self.aggregated_data.copy()
         if manufacturer:
             filtered_data = filtered_data[
@@ -162,13 +168,10 @@ class CategoryDataAnalyzer:
                 filtered_data['Weight_Class'] == weight_class
                 ]
 
-        # Group by vehicle and calculate metrics
         metrics = []
         for vehicle_id in filtered_data['Vehicle_ID'].unique():
             vehicle_data = filtered_data[filtered_data['Vehicle_ID'] == vehicle_id]
-
-            # Filter out rows with null values in time columns
-            valid_time_data = vehicle_data.dropna(subset=['Driving Time', 'Idling Time', 'Total Run Time'])
+            valid_time_data = vehicle_data.dropna(subset=['Driving Time', 'Idling Time', 'Total Trip Time'])
 
             metric = {
                 'Vehicle_ID': vehicle_id,
@@ -176,10 +179,13 @@ class CategoryDataAnalyzer:
                 'Weight_Class': vehicle_data['Weight_Class'].iloc[0],
                 'Model_Year': vehicle_data['Model_Year'].iloc[0],
                 'Total_Trips': len(vehicle_data),
-                'Total_Distance': vehicle_data[
-                    'Total Distance'].sum() if 'Total Distance' in vehicle_data.columns else 0,
+                'Total_Distance': vehicle_data['Total Distance'].sum(),
                 'Total_Energy': vehicle_data[
-                    'Total Energy Consumption'].sum() if 'Total Energy Consumption' in vehicle_data.columns else 0
+                    'Total Energy Consumption'].sum() if 'Total Energy Consumption' in vehicle_data.columns else 0,
+                'Total_Trip_Hours': round(vehicle_data['Total Trip Time'].sum(), 4),
+                'Average_Speed': round(
+                    vehicle_data['Total Distance'].sum() / vehicle_data['Total Trip Time'].sum(), 2
+                ) if vehicle_data['Total Trip Time'].sum() > 0 else 0
             }
 
             # Calculate efficiency
@@ -188,50 +194,27 @@ class CategoryDataAnalyzer:
             else:
                 metric['Energy_Efficiency'] = 0
 
-            # Calculate time metrics only for rows with valid time data
-            if not valid_time_data.empty and all(
-                    col in valid_time_data.columns for col in ['Driving Time', 'Idling Time']):
+            # Calculate time metrics
+            if not valid_time_data.empty:
                 metric['Total_Driving_Hours'] = round(valid_time_data['Driving Time'].sum(), 4)
                 metric['Total_Idle_Hours'] = round(valid_time_data['Idling Time'].sum(), 4)
                 total_hours = metric['Total_Driving_Hours'] + metric['Total_Idle_Hours']
-
-                if total_hours > 0:
-                    metric['Idle_Percentage'] = round((metric['Total_Idle_Hours'] / total_hours * 100), 2)
-                else:
-                    metric['Idle_Percentage'] = 0
-            else:
-                metric['Total_Driving_Hours'] = 0
-                metric['Total_Idle_Hours'] = 0
-                metric['Idle_Percentage'] = 0
+                metric['Idle_Percentage'] = round((metric['Total_Idle_Hours'] / total_hours * 100),
+                                                  2) if total_hours > 0 else 0
 
             # Calculate temperature metrics
             if 'Average Ambient Temperature' in vehicle_data.columns:
-                valid_temp = vehicle_data['Average Ambient Temperature'].dropna()
-                if not valid_temp.empty:
-                    metric['Avg_Temperature'] = round(valid_temp.mean(), 2)
-                    metric['Min_Temperature'] = round(valid_temp.min(), 2)
-                    metric['Max_Temperature'] = round(valid_temp.max(), 2)
+                # Convert to numeric, coerce errors to NaN
+                temps = pd.to_numeric(vehicle_data['Average Ambient Temperature'], errors='coerce')
+                valid_temps = temps.dropna()
+                if not valid_temps.empty:
+                    metric['Avg_Temperature'] = round(valid_temps.mean(), 2)
+                    metric['Min_Temperature'] = round(valid_temps.min(), 2)
+                    metric['Max_Temperature'] = round(valid_temps.max(), 2)
 
             metrics.append(metric)
 
-        metrics_df = pd.DataFrame(metrics)
-
-        # Round specific columns
-        if not metrics_df.empty:
-            round_dict = {
-                'Total_Distance': 2,
-                'Total_Energy': 2,
-                'Energy_Efficiency': 4,
-                'Total_Driving_Hours': 4,
-                'Total_Idle_Hours': 4,
-                'Idle_Percentage': 2
-            }
-
-            for col, decimals in round_dict.items():
-                if col in metrics_df.columns:
-                    metrics_df[col] = metrics_df[col].round(decimals)
-
-        return metrics_df
+        return pd.DataFrame(metrics)
 
     def calculate_detailed_stats(self, manufacturer: Optional[str] = None,
                                  weight_class: Optional[str] = None) -> pd.DataFrame:
@@ -404,7 +387,6 @@ class CategoryDataAnalyzer:
 
     def calculate_statistical_summary(self, manufacturer: Optional[str] = None,
                                       weight_class: Optional[str] = None) -> Dict:
-        """Calculate comprehensive statistical summary for filtered data"""
         if self.aggregated_data.empty:
             return {}
 
@@ -418,16 +400,23 @@ class CategoryDataAnalyzer:
                 filtered_data['Weight_Class'] == weight_class
                 ]
 
-        # Filter out rows with null values for time calculations
-        valid_time_data = filtered_data.dropna(subset=['Driving Time', 'Idling Time', 'Total Run Time'])
+        # Add Average Speed to the statistics
+        filtered_data['Average Speed'] = filtered_data.apply(
+            lambda row: row['Total Distance'] / row['Total Trip Time']
+            if row['Total Trip Time'] > 0 else 0,
+            axis=1
+        )
 
-        # Calculate statistics for numeric columns
-        numeric_cols = ['Total Distance', 'Total Energy Consumption', 'Average Ambient Temperature']
+        numeric_cols = [
+            'Total Distance', 'Total Energy Consumption',
+            'Average Ambient Temperature', 'Total Trip Time',
+            'Average Speed', 'Driving Time', 'Idling Time'
+        ]
         basic_stats_data = {}
 
         for col in numeric_cols:
             if col in filtered_data.columns:
-                valid_data = filtered_data[col].dropna()
+                valid_data = pd.to_numeric(filtered_data[col], errors='coerce').dropna()
                 if not valid_data.empty:
                     basic_stats_data[col] = {
                         'Count': len(valid_data),
@@ -440,51 +429,32 @@ class CategoryDataAnalyzer:
                         'Max': valid_data.max()
                     }
 
-        # Add time-based statistics
-        if not valid_time_data.empty:
-            for col in ['Driving Time', 'Idling Time']:
-                if col in valid_time_data.columns:
-                    basic_stats_data[col] = {
-                        'Count': len(valid_time_data),
-                        'Mean': valid_time_data[col].mean(),
-                        'Std': valid_time_data[col].std(),
-                        'Min': valid_time_data[col].min(),
-                        '25%': valid_time_data[col].quantile(0.25),
-                        'Median': valid_time_data[col].median(),
-                        '75%': valid_time_data[col].quantile(0.75),
-                        'Max': valid_time_data[col].max()
-                    }
-
-        # Create DataFrame and round appropriately
         basic_stats = pd.DataFrame(basic_stats_data)
 
-        # Define rounding for different column types
         round_dict = {
             'Total Distance': 2,
             'Total Energy Consumption': 2,
             'Average Ambient Temperature': 2,
+            'Total Trip Time': 4,
             'Driving Time': 4,
-            'Idling Time': 4
+            'Idling Time': 4,
+            'Average Speed': 2
         }
 
-        # Apply rounding
         for col in basic_stats.columns:
             if col in round_dict:
                 basic_stats[col] = basic_stats[col].round(round_dict[col])
 
-        # Calculate fleet-wide statistics
         fleet_stats = {
             'total_vehicles': len(filtered_data['Vehicle_ID'].unique()),
             'total_trips': len(filtered_data),
-            'total_distance': filtered_data['Total Distance'].sum() if 'Total Distance' in filtered_data.columns else 0,
-            'avg_trip_distance': filtered_data[
-                'Total Distance'].mean() if 'Total Distance' in filtered_data.columns else 0,
+            'total_distance': filtered_data['Total Distance'].sum(),
+            'avg_trip_distance': filtered_data['Total Distance'].mean(),
             'total_energy': filtered_data[
                 'Total Energy Consumption'].sum() if 'Total Energy Consumption' in filtered_data.columns else 0,
             'avg_energy_per_trip': filtered_data[
                 'Total Energy Consumption'].mean() if 'Total Energy Consumption' in filtered_data.columns else 0,
-            'total_driving_hours': round(valid_time_data['Driving Time'].sum(), 4) if not valid_time_data.empty else 0,
-            'total_idle_hours': round(valid_time_data['Idling Time'].sum(), 4) if not valid_time_data.empty else 0
+            'avg_speed': filtered_data['Average Speed'].mean()
         }
 
         return {
