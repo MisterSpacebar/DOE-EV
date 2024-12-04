@@ -60,14 +60,38 @@ def main():
 
         # Category selection
         st.sidebar.subheader("Filter Options")
+
+        # Initialize session state for selections if not exists
+        if 'prev_manufacturer' not in st.session_state:
+            st.session_state.prev_manufacturer = "All"
+        if 'prev_weight_class' not in st.session_state:
+            st.session_state.prev_weight_class = "All"
+
+        # Category selection
         selected_manufacturer = st.sidebar.selectbox(
             "Select Manufacturer",
             ["All"] + categories['manufacturers']
         )
+
         selected_weight_class = st.sidebar.selectbox(
             "Select Weight Class",
             ["All"] + categories['weight_classes']
         )
+
+        # Reset logic
+        if selected_manufacturer != st.session_state.prev_manufacturer:
+            if selected_manufacturer != "All" and selected_weight_class != "All":
+                selected_weight_class = "All"
+                st.session_state.prev_weight_class = "All"
+                st.rerun()
+            st.session_state.prev_manufacturer = selected_manufacturer
+
+        if selected_weight_class != st.session_state.prev_weight_class:
+            if selected_weight_class != "All" and selected_manufacturer != "All":
+                selected_manufacturer = "All"
+                st.session_state.prev_manufacturer = "All"
+                st.rerun()
+            st.session_state.prev_weight_class = selected_weight_class
 
         # Convert "All" to None for filtering
         manufacturer_filter = None if selected_manufacturer == "All" else selected_manufacturer
@@ -80,8 +104,16 @@ def main():
         )
 
         if analysis_type == "Overview":
+            # Create display title based on selections
+            if manufacturer_filter:
+                category_title = f"for {selected_manufacturer}"
+            elif weight_filter:
+                category_title = f"for Weight Class {selected_weight_class}"
+            else:
+                category_title = "for All Vehicles"
+
             # Display summary metrics
-            st.header("Category Summary")
+            st.header(f"Category Summary {category_title}")
             summary = category_analyzer.get_category_summary(manufacturer_filter, weight_filter)
 
             col1, col2, col3 = st.columns(3)
@@ -97,7 +129,7 @@ def main():
                     st.metric("Avg Temperature (°F)", f"{summary['avg_temperature']:.1f}")
 
             # Add comprehensive statistics section
-            st.header("Comprehensive Statistics")
+            st.header(f"Comprehensive Statistics {category_title}")
             detailed_stats = category_analyzer.calculate_detailed_stats(manufacturer_filter, weight_filter)
 
             if not detailed_stats.empty:
@@ -113,30 +145,30 @@ def main():
                 ])
 
                 with metric_tabs[0]:
-                    st.subheader("Energy Performance Statistics")
+                    st.subheader(f"Energy Performance Statistics {category_title}")
                     energy_cols = detailed_stats.loc[
                         ['Energy Efficiency (kWh/mi)', 'Total Energy (kWh)', 'Avg Energy per Trip (kWh)']]
                     st.dataframe(energy_cols)
 
                 with metric_tabs[1]:
-                    st.subheader("Distance Statistics")
+                    st.subheader(f"Distance Statistics {category_title}")
                     distance_cols = detailed_stats.loc[['Total Distance (mi)', 'Avg Trip Distance (mi)']]
                     st.dataframe(distance_cols)
 
                 with metric_tabs[2]:
-                    st.subheader("Temperature Statistics")
+                    st.subheader(f"Temperature Statistics {category_title}")
                     temp_cols = detailed_stats.loc[
                         ['Avg Temperature (°F)', 'Min Temperature (°F)', 'Max Temperature (°F)']]
                     st.dataframe(temp_cols)
 
                 with metric_tabs[3]:
-                    st.subheader("Time and Utilization Statistics")
+                    st.subheader(f"Time and Utilization Statistics {category_title}")
                     time_cols = detailed_stats.loc[
                         ['Total Drive Time (hrs)', 'Total Idle Time (hrs)', 'Avg Idle Time (%)']]
                     st.dataframe(time_cols)
 
                 # Display statistical visualizations
-                st.header("Statistical Distributions")
+                st.header(f"Statistical Distributions {category_title}")
                 stat_visuals = category_analyzer.generate_stats_visualizations(detailed_stats)
 
                 col1, col2 = st.columns(2)
@@ -145,7 +177,7 @@ def main():
                         st.plotly_chart(fig, use_container_width=True)
 
             # Display visualizations
-            st.header("Performance Overview")
+            st.header(f"Performance Overview {category_title}")
             visuals = category_analyzer.generate_visualizations(manufacturer_filter, weight_filter)
 
             col1, col2 = st.columns(2)
