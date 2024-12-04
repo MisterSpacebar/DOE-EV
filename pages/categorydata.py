@@ -232,23 +232,24 @@ class CategoryDataAnalyzer:
                 filtered_data['Weight_Class'] == weight_class
                 ]
 
-        filtered_data = self._convert_numeric_columns(filtered_data)
-
         # Group metrics by vehicle
         vehicle_metrics = []
         for vehicle_id in filtered_data['Vehicle_ID'].unique():
             vehicle_data = filtered_data[filtered_data['Vehicle_ID'] == vehicle_id]
 
             try:
+                total_distance = vehicle_data['Total Distance'].sum()
+                total_time = vehicle_data['Total Trip Time'].sum()
+
                 metrics = {
                     'Total Trips': len(vehicle_data),
-                    'Total Distance (mi)': vehicle_data['Total Distance'].sum(),
+                    'Total Distance (mi)': total_distance,
                     'Avg Trip Distance (mi)': vehicle_data['Total Distance'].mean(),
                     'Total Energy (kWh)': vehicle_data['Total Energy Consumption'].sum(),
                     'Avg Energy per Trip (kWh)': vehicle_data['Total Energy Consumption'].mean(),
                     'Energy Efficiency (kWh/mi)': (vehicle_data['Total Energy Consumption'].sum() /
-                                                   vehicle_data['Total Distance'].sum()) if vehicle_data[
-                                                                                                'Total Distance'].sum() > 0 else 0,
+                                                   total_distance) if total_distance > 0 else 0,
+                    'Average Speed (mph)': (total_distance / total_time) if total_time > 0 else 0,
                     'Avg Temperature (°F)': vehicle_data['Average Ambient Temperature'].mean(),
                     'Min Temperature (°F)': vehicle_data['Average Ambient Temperature'].min(),
                     'Max Temperature (°F)': vehicle_data['Average Ambient Temperature'].max(),
