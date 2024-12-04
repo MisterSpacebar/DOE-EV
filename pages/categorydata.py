@@ -500,10 +500,17 @@ class CategoryDataAnalyzer:
         if weight_class:
             filtered_data = filtered_data[filtered_data['Weight_Class'] == weight_class]
 
+        # Calculate Energy Efficiency (kWh/mi)
+        if 'Total Energy Consumption' in filtered_data.columns and 'Total Distance' in filtered_data.columns:
+            filtered_data['Energy_Efficiency'] = filtered_data['Total Energy Consumption'] / filtered_data[
+                'Total Distance']
+            filtered_data = filtered_data[filtered_data['Energy_Efficiency'] > 0]
+
         numeric_cols = [
             'Total Distance', 'Total Energy Consumption',
             'Average Ambient Temperature', 'Total Trip Time',
-            'Average Speed', 'Driving Time', 'Idling Time'
+            'Average Speed', 'Driving Time', 'Idling Time',
+            'Energy_Efficiency'  # Include Energy Efficiency in summary statistics
         ]
         basic_stats_data = {}
 
@@ -515,14 +522,13 @@ class CategoryDataAnalyzer:
                     q3 = valid_data.quantile(0.75)
                     iqr = q3 - q1
                     basic_stats_data[col] = {
-                        'Count': len(valid_data),
-                        'Mean': valid_data.mean(),
-                        'Std': valid_data.std(),
                         'Min': valid_data.min(),
                         '25%': q1,
+                        'Mean': valid_data.mean(),
                         'Median': valid_data.median(),
                         '75%': q3,
                         'Max': valid_data.max(),
+                        'Std': valid_data.std(),
                         'IQR': iqr
                     }
 
@@ -537,6 +543,7 @@ class CategoryDataAnalyzer:
             'Driving Time': 4,
             'Idling Time': 4,
             'Average Speed': 2,
+            'Energy_Efficiency': 2,  # Round Energy Efficiency values
             '25%': 2,
             '75%': 2,
             'IQR': 2

@@ -132,7 +132,6 @@ def main():
             st.header(f"Comprehensive Statistics {category_title}")
             detailed_stats = category_analyzer.calculate_statistical_summary(manufacturer_filter, weight_filter)
 
-            # Check if 'basic_stats' exists in the returned dictionary and it's not empty
             if 'basic_stats' in detailed_stats and not detailed_stats['basic_stats'].empty:
                 basic_stats_df = detailed_stats['basic_stats']
 
@@ -140,6 +139,10 @@ def main():
                 columns_to_display = [
                     "Min", "25%", "Mean", "Median", "75%", "Max", "Std", "IQR"
                 ]
+
+                # Add Energy_Efficiency to the comprehensive statistics table
+                if 'Energy_Efficiency' in basic_stats_df.columns:
+                    columns_to_display.append('Energy_Efficiency')
 
                 # Ensure only available columns are displayed to avoid KeyErrors
                 available_columns = [col for col in columns_to_display if col in basic_stats_df.index]
@@ -160,7 +163,8 @@ def main():
 
                 with metric_tabs[0]:
                     st.subheader(f"Energy Performance Statistics {category_title}")
-                    energy_metrics = ['Total Energy Consumption', 'Avg Energy per Trip']
+                    energy_metrics = ['Total Energy Consumption', 'Avg Energy per Trip',
+                                      'Energy_Efficiency']  # Add Energy Efficiency here
                     available_energy_metrics = [metric for metric in energy_metrics if metric in transposed_df.index]
 
                     if available_energy_metrics:
