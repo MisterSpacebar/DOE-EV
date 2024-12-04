@@ -202,8 +202,17 @@ def main():
 
                 # Display statistical visualizations
                 st.header(f"Statistical Distributions {category_title}")
-                stat_visuals = category_analyzer.generate_stats_visualizations(detailed_stats)
+                stats_visual_output = category_analyzer.generate_stats_visualizations(detailed_stats)
 
+                # Extract visuals and warnings
+                stat_visuals = stats_visual_output.get('visuals', {})
+                visual_warnings = stats_visual_output.get('warnings', [])
+
+                # Display warnings if any
+                for warning in visual_warnings:
+                    st.warning(warning)
+
+                # Display the visualizations
                 col1, col2 = st.columns(2)
                 for i, (title, fig) in enumerate(stat_visuals.items()):
                     with col1 if i % 2 == 0 else col2:

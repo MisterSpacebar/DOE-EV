@@ -353,16 +353,19 @@ class CategoryDataAnalyzer:
     def generate_stats_visualizations(self, stats: Dict) -> Dict:
         """Generate visualizations for comprehensive statistics"""
         visuals = {}
+        warnings = []
 
         # Extract 'basic_stats' from the provided dictionary
         if 'basic_stats' not in stats:
-            return visuals
+            warnings.append("No basic statistics available for visualization.")
+            return {'visuals': visuals, 'warnings': warnings}
 
         stats_df = stats['basic_stats']
 
-        # Ensure that stats_df is a DataFrame
+        # Ensure that stats_df is a DataFrame and not empty
         if not isinstance(stats_df, pd.DataFrame) or stats_df.empty:
-            return visuals
+            warnings.append("The basic stats DataFrame is either missing or empty.")
+            return {'visuals': visuals, 'warnings': warnings}
 
         # Only consider numeric columns that exist in the stats DataFrame
         available_metrics = [
@@ -374,6 +377,10 @@ class CategoryDataAnalyzer:
 
         # Correctly access the index of the DataFrame
         key_metrics = [metric for metric in available_metrics if metric in stats_df.index]
+
+        if not key_metrics:
+            warnings.append("No key metrics are available in the provided data for visualization.")
+            return {'visuals': visuals, 'warnings': warnings}
 
         for metric in key_metrics:
             try:
@@ -391,10 +398,9 @@ class CategoryDataAnalyzer:
                     labels={'Value': metric}
                 )
             except Exception as e:
-                print(f"Error creating visualization for {metric}: {e}")
-                continue
+                warnings.append(f"Error creating visualization for {metric}: {e}")
 
-        return visuals
+        return {'visuals': visuals, 'warnings': warnings}
 
     def generate_visualizations(self, manufacturer: Optional[str] = None, weight_class: Optional[str] = None) -> Dict:
         if self.aggregated_data.empty:
