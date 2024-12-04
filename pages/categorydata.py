@@ -561,7 +561,6 @@ class CategoryDataAnalyzer:
         if self.aggregated_data.empty:
             return {}
 
-        # Filter data
         filtered_data = self.aggregated_data.copy()
         if manufacturer:
             filtered_data = filtered_data[
@@ -572,32 +571,35 @@ class CategoryDataAnalyzer:
                 filtered_data['Weight_Class'] == weight_class
                 ]
 
-        # Ensure we have datetime for trip start
+        # Handle datetime with flexible format
         if 'Local Trip Start Time' in filtered_data.columns:
-            filtered_data['Trip_Date'] = pd.to_datetime(filtered_data['Local Trip Start Time']).dt.date
+            try:
+                filtered_data['Trip_Date'] = pd.to_datetime(
+                    filtered_data['Local Trip Start Time'],
+                    format='mixed'
+                ).dt.date
 
-            # Analyze daily trends
-            daily_metrics = filtered_data.groupby('Trip_Date').agg({
-                'Total Distance': 'sum',
-                'Total Energy Consumption': 'sum',
-                'Average Ambient Temperature': 'mean',
-                'Vehicle_ID': 'nunique'
-            }).reset_index()
+                daily_metrics = filtered_data.groupby('Trip_Date').agg({
+                    'Total Distance': 'sum',
+                    'Total Energy Consumption': 'sum',
+                    'Average Ambient Temperature': 'mean',
+                    'Vehicle_ID': 'nunique'
+                }).reset_index()
 
-            # Calculate rolling averages
-            window = 7  # 7-day rolling average
-            rolling_metrics = daily_metrics.set_index('Trip_Date').rolling(window=window).mean()
+                window = 7
+                rolling_metrics = daily_metrics.set_index('Trip_Date').rolling(window=window).mean()
 
-            trend_analysis = {
-                'daily_metrics': daily_metrics,
-                'rolling_averages': rolling_metrics,
-                'total_days': len(daily_metrics),
-                'avg_daily_distance': daily_metrics['Total Distance'].mean(),
-                'avg_daily_energy': daily_metrics['Total Energy Consumption'].mean(),
-                'avg_daily_vehicles': daily_metrics['Vehicle_ID'].mean()
-            }
-
-            return trend_analysis
+                return {
+                    'daily_metrics': daily_metrics,
+                    'rolling_averages': rolling_metrics,
+                    'total_days': len(daily_metrics),
+                    'avg_daily_distance': daily_metrics['Total Distance'].mean(),
+                    'avg_daily_energy': daily_metrics['Total Energy Consumption'].mean(),
+                    'avg_daily_vehicles': daily_metrics['Vehicle_ID'].mean()
+                }
+            except Exception as e:
+                print(f"Error in trend analysis: {e}")
+                return {}
 
         return {}
 
