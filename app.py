@@ -231,6 +231,8 @@ def main():
             with col2:
                 if 'energy_distance' in visuals:
                     st.plotly_chart(visuals['energy_distance'], use_container_width=True)
+                if 'efficiency_speed' in visuals:  # Display the new kWh/mi vs Average Speed plot
+                    st.plotly_chart(visuals['efficiency_speed'], use_container_width=True)
                 if 'idle_time' in visuals:
                     st.plotly_chart(visuals['idle_time'], use_container_width=True)
 

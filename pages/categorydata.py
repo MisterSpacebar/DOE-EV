@@ -413,11 +413,10 @@ class CategoryDataAnalyzer:
             filtered_data = filtered_data[filtered_data['Weight_Class'] == weight_class]
 
         # Apply reasonable bounds filtering
-        max_efficiency = 100   # Based on the statistical maximum of ~13 kWh/mi
+        max_efficiency = 100  # Based on the statistical maximum of ~13 kWh/mi
 
         energy_data = filtered_data[
-            (filtered_data['Total Energy Consumption'] > 0) &
-            (filtered_data['Total Distance'] > 0)
+            (filtered_data['Total Energy Consumption'] > 0) & (filtered_data['Total Distance'] > 0)
             ].copy()
 
         energy_data['Energy_Efficiency'] = energy_data['Total Energy Consumption'] / energy_data['Total Distance']
@@ -451,18 +450,33 @@ class CategoryDataAnalyzer:
             trendline='ols'
         )
 
-        # Calculate per-trip efficiency for temperature impact
+        # Temperature Impact on Energy Efficiency
         visuals['temperature'] = px.scatter(
             energy_data,
             x='Average Ambient Temperature',
             y='Energy_Efficiency',
-            # color='Manufacturer' if not manufacturer else 'Weight_Class',
             color='Manufacturer' if not manufacturer else 'Weight_Class',
             title='Temperature Impact on Energy Efficiency',
             labels={'Energy_Efficiency': 'Energy per Mile (kWh/mi)'},
             trendline='ols'
         )
 
+        # New Plot: kWh/mi vs Average Speed
+        if 'Energy_Efficiency' in energy_data.columns and 'Average Speed' in energy_data.columns:
+            visuals['efficiency_speed'] = px.scatter(
+                energy_data,
+                x='Average Speed',
+                y='Energy_Efficiency',
+                color='Manufacturer' if not manufacturer else 'Weight_Class',
+                title='Energy Efficiency vs Average Speed',
+                labels={
+                    'Average Speed': 'Average Speed (mph)',
+                    'Energy_Efficiency': 'Energy per Mile (kWh/mi)'
+                },
+                trendline='ols'
+            )
+
+        # Retain Idle Time Distribution if desired (optional)
         # Idle Time Analysis
         if 'Percent Idling Time' in filtered_data.columns:
             idle_data = filtered_data[filtered_data['Percent Idling Time'] <= 100]
