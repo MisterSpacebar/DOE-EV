@@ -151,6 +151,7 @@ class CategoryDataAnalyzer:
         if self.aggregated_data.empty:
             return pd.DataFrame()
 
+        # Filter data
         filtered_data = self.aggregated_data.copy()
         if manufacturer:
             filtered_data = filtered_data[
@@ -161,11 +162,13 @@ class CategoryDataAnalyzer:
                 filtered_data['Weight_Class'] == weight_class
                 ]
 
-        filtered_data = self._convert_numeric_columns(filtered_data)
-
+        # Group by vehicle and calculate metrics
         metrics = []
         for vehicle_id in filtered_data['Vehicle_ID'].unique():
             vehicle_data = filtered_data[filtered_data['Vehicle_ID'] == vehicle_id]
+
+            # Filter out rows with null values in time columns
+            valid_time_data = vehicle_data.dropna(subset=['Driving Time', 'Idling Time', 'Total Run Time'])
 
             metric = {
                 'Vehicle_ID': vehicle_id,
@@ -185,16 +188,50 @@ class CategoryDataAnalyzer:
             else:
                 metric['Energy_Efficiency'] = 0
 
-            # Calculate time metrics
-            if all(col in vehicle_data.columns for col in ['Driving Time', 'Idling Time']):
-                metric['Total_Driving_Hours'] = vehicle_data['Driving Time'].sum()
-                metric['Total_Idle_Hours'] = vehicle_data['Idling Time'].sum()
+            # Calculate time metrics only for rows with valid time data
+            if not valid_time_data.empty and all(
+                    col in valid_time_data.columns for col in ['Driving Time', 'Idling Time']):
+                metric['Total_Driving_Hours'] = round(valid_time_data['Driving Time'].sum(), 4)
+                metric['Total_Idle_Hours'] = round(valid_time_data['Idling Time'].sum(), 4)
                 total_hours = metric['Total_Driving_Hours'] + metric['Total_Idle_Hours']
-                metric['Idle_Percentage'] = (metric['Total_Idle_Hours'] / total_hours * 100) if total_hours > 0 else 0
+
+                if total_hours > 0:
+                    metric['Idle_Percentage'] = round((metric['Total_Idle_Hours'] / total_hours * 100), 2)
+                else:
+                    metric['Idle_Percentage'] = 0
+            else:
+                metric['Total_Driving_Hours'] = 0
+                metric['Total_Idle_Hours'] = 0
+                metric['Idle_Percentage'] = 0
+
+            # Calculate temperature metrics
+            if 'Average Ambient Temperature' in vehicle_data.columns:
+                valid_temp = vehicle_data['Average Ambient Temperature'].dropna()
+                if not valid_temp.empty:
+                    metric['Avg_Temperature'] = round(valid_temp.mean(), 2)
+                    metric['Min_Temperature'] = round(valid_temp.min(), 2)
+                    metric['Max_Temperature'] = round(valid_temp.max(), 2)
 
             metrics.append(metric)
 
-        return pd.DataFrame(metrics)
+        metrics_df = pd.DataFrame(metrics)
+
+        # Round specific columns
+        if not metrics_df.empty:
+            round_dict = {
+                'Total_Distance': 2,
+                'Total_Energy': 2,
+                'Energy_Efficiency': 4,
+                'Total_Driving_Hours': 4,
+                'Total_Idle_Hours': 4,
+                'Idle_Percentage': 2
+            }
+
+            for col, decimals in round_dict.items():
+                if col in metrics_df.columns:
+                    metrics_df[col] = metrics_df[col].round(decimals)
+
+        return metrics_df
 
     def calculate_detailed_stats(self, manufacturer: Optional[str] = None,
                                  weight_class: Optional[str] = None) -> pd.DataFrame:
@@ -371,7 +408,6 @@ class CategoryDataAnalyzer:
         if self.aggregated_data.empty:
             return {}
 
-        # Filter data
         filtered_data = self.aggregated_data.copy()
         if manufacturer:
             filtered_data = filtered_data[
@@ -382,16 +418,59 @@ class CategoryDataAnalyzer:
                 filtered_data['Weight_Class'] == weight_class
                 ]
 
-        # Basic statistics for numeric columns
-        numeric_cols = filtered_data.select_dtypes(include=[np.number]).columns
-        basic_stats = filtered_data[numeric_cols].agg([
-            'count', 'mean', 'std', 'min',
-            lambda x: x.quantile(0.25),
-            'median',
-            lambda x: x.quantile(0.75),
-            'max'
-        ]).round(3)
-        basic_stats.index = ['Count', 'Mean', 'Std', 'Min', '25%', 'Median', '75%', 'Max']
+        # Filter out rows with null values for time calculations
+        valid_time_data = filtered_data.dropna(subset=['Driving Time', 'Idling Time', 'Total Run Time'])
+
+        # Calculate statistics for numeric columns
+        numeric_cols = ['Total Distance', 'Total Energy Consumption', 'Average Ambient Temperature']
+        basic_stats_data = {}
+
+        for col in numeric_cols:
+            if col in filtered_data.columns:
+                valid_data = filtered_data[col].dropna()
+                if not valid_data.empty:
+                    basic_stats_data[col] = {
+                        'Count': len(valid_data),
+                        'Mean': valid_data.mean(),
+                        'Std': valid_data.std(),
+                        'Min': valid_data.min(),
+                        '25%': valid_data.quantile(0.25),
+                        'Median': valid_data.median(),
+                        '75%': valid_data.quantile(0.75),
+                        'Max': valid_data.max()
+                    }
+
+        # Add time-based statistics
+        if not valid_time_data.empty:
+            for col in ['Driving Time', 'Idling Time']:
+                if col in valid_time_data.columns:
+                    basic_stats_data[col] = {
+                        'Count': len(valid_time_data),
+                        'Mean': valid_time_data[col].mean(),
+                        'Std': valid_time_data[col].std(),
+                        'Min': valid_time_data[col].min(),
+                        '25%': valid_time_data[col].quantile(0.25),
+                        'Median': valid_time_data[col].median(),
+                        '75%': valid_time_data[col].quantile(0.75),
+                        'Max': valid_time_data[col].max()
+                    }
+
+        # Create DataFrame and round appropriately
+        basic_stats = pd.DataFrame(basic_stats_data)
+
+        # Define rounding for different column types
+        round_dict = {
+            'Total Distance': 2,
+            'Total Energy Consumption': 2,
+            'Average Ambient Temperature': 2,
+            'Driving Time': 4,
+            'Idling Time': 4
+        }
+
+        # Apply rounding
+        for col in basic_stats.columns:
+            if col in round_dict:
+                basic_stats[col] = basic_stats[col].round(round_dict[col])
 
         # Calculate fleet-wide statistics
         fleet_stats = {
@@ -403,25 +482,14 @@ class CategoryDataAnalyzer:
             'total_energy': filtered_data[
                 'Total Energy Consumption'].sum() if 'Total Energy Consumption' in filtered_data.columns else 0,
             'avg_energy_per_trip': filtered_data[
-                'Total Energy Consumption'].mean() if 'Total Energy Consumption' in filtered_data.columns else 0
+                'Total Energy Consumption'].mean() if 'Total Energy Consumption' in filtered_data.columns else 0,
+            'total_driving_hours': round(valid_time_data['Driving Time'].sum(), 4) if not valid_time_data.empty else 0,
+            'total_idle_hours': round(valid_time_data['Idling Time'].sum(), 4) if not valid_time_data.empty else 0
         }
-
-        # Calculate percentile analysis for key metrics
-        percentile_metrics = ['Total Distance', 'Total Energy Consumption', 'Average Ambient Temperature']
-        percentiles = [0.1, 0.25, 0.5, 0.75, 0.9]
-
-        percentile_stats = {}
-        for metric in percentile_metrics:
-            if metric in filtered_data.columns:
-                percentile_stats[metric] = {
-                    f'p{int(p * 100)}': filtered_data[metric].quantile(p)
-                    for p in percentiles
-                }
 
         return {
             'basic_stats': basic_stats,
-            'fleet_stats': fleet_stats,
-            'percentile_stats': percentile_stats
+            'fleet_stats': fleet_stats
         }
 
     def perform_category_comparison(self, category: str) -> Dict:
