@@ -64,6 +64,47 @@ class CategoryDataAnalyzer:
 
         return df_copy
 
+    def validate_trip_data(self, row: pd.Series) -> Dict[str, bool]:
+        """Validate trip data for consistency and reasonableness"""
+        validations = {
+            'valid_distance': False,
+            'valid_times': False,
+            'matching_times': False,
+            'reasonable_speed': False
+        }
+
+        try:
+            # Distance validation
+            distance = pd.to_numeric(row['Total Distance'], errors='coerce')
+            validations['valid_distance'] = 0 < distance < 1000
+
+            # Time validation
+            drive_time = pd.to_numeric(row['Driving Time'], errors='coerce')
+            idle_time = pd.to_numeric(row['Idling Time'], errors='coerce')
+            run_time = pd.to_numeric(row['Total Run Time'], errors='coerce')
+
+            validations['valid_times'] = (
+                    pd.notnull(drive_time) and drive_time >= 0 and
+                    pd.notnull(idle_time) and idle_time >= 0 and
+                    pd.notnull(run_time) and run_time > 0
+            )
+
+            # Time components validation
+            if validations['valid_times']:
+                calculated_total = drive_time + idle_time
+                time_diff_percent = abs(calculated_total - run_time) / run_time * 100
+                validations['matching_times'] = time_diff_percent <= 1
+
+            # Speed validation
+            if validations['valid_distance'] and validations['valid_times']:
+                speed = distance / run_time
+                validations['reasonable_speed'] = 0 < speed <= 80
+
+        except Exception as e:
+            print(f"Validation error: {e}")
+
+        return validations
+
     def _aggregate_data(self) -> pd.DataFrame:
         """Combine all vehicle data into a single DataFrame with metadata"""
         all_data = []
@@ -72,33 +113,35 @@ class CategoryDataAnalyzer:
             try:
                 file_info = self.file_metadata[self.file_metadata['filename'] == filename].iloc[0]
                 df_copy = df.copy()
-                df_copy = df_copy[df_copy['Total Distance'] > 0]
 
-                if df_copy.empty:
-                    continue
-
-                # Convert time columns to numeric
-                for col in ['Total Run Time', 'Driving Time', 'Idling Time']:
+                # Convert numeric columns
+                numeric_cols = ['Total Distance', 'Total Run Time', 'Driving Time', 'Idling Time']
+                for col in numeric_cols:
                     if col in df_copy.columns:
                         df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce')
 
-                # Calculate Total Trip Time and Average Speed
-                df_copy['Total Trip Time'] = df_copy['Total Run Time']  # Use Total Run Time directly
-                df_copy['Average Speed'] = df_copy.apply(
-                    lambda row: row['Total Distance'] / row['Total Trip Time']
-                    if pd.notnull(row['Total Trip Time']) and row['Total Trip Time'] > 0
-                    else 0,
-                    axis=1
-                )
+                # Add Total Trip Time based on Total Run Time
+                df_copy['Total Trip Time'] = df_copy['Total Run Time']
 
-                # Add metadata
-                df_copy['Vehicle_ID'] = file_info['vehicle_id']
-                df_copy['Manufacturer'] = file_info['manufacturer']
-                df_copy['Weight_Class'] = file_info['weight_class']
-                df_copy['Model_Year'] = file_info['model_year']
-                df_copy['Fleet_ID'] = file_info['fleet_id']
+                # Validate each row
+                validated_rows = []
+                for _, row in df_copy.iterrows():
+                    validations = self.validate_trip_data(row)
+                    if all(validations.values()):
+                        row['Average Speed'] = row['Total Distance'] / row['Total Run Time']
+                        validated_rows.append(row)
+                    else:
+                        print(f"Invalid data in {filename}: {validations}")
 
-                all_data.append(df_copy)
+                if validated_rows:
+                    validated_df = pd.DataFrame(validated_rows)
+                    validated_df['Vehicle_ID'] = file_info['vehicle_id']
+                    validated_df['Manufacturer'] = file_info['manufacturer']
+                    validated_df['Weight_Class'] = file_info['weight_class']
+                    validated_df['Model_Year'] = file_info['model_year']
+                    validated_df['Fleet_ID'] = file_info['fleet_id']
+                    all_data.append(validated_df)
+
             except Exception as e:
                 print(f"Error processing {filename}: {e}")
                 continue
