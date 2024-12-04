@@ -130,11 +130,25 @@ def main():
 
             # Add comprehensive statistics section
             st.header(f"Comprehensive Statistics {category_title}")
-            detailed_stats = category_analyzer.calculate_detailed_stats(manufacturer_filter, weight_filter)
+            detailed_stats = category_analyzer.calculate_statistical_summary(manufacturer_filter, weight_filter)
 
-            if not detailed_stats.empty:
-                # Display the statistics table
-                st.dataframe(detailed_stats)
+            # Check if 'basic_stats' exists in the returned dictionary and it's not empty
+            if 'basic_stats' in detailed_stats and not detailed_stats['basic_stats'].empty:
+                basic_stats_df = detailed_stats['basic_stats']
+
+                # Include quartiles (25% and 75%) in the table display
+                columns_to_display = [
+                    "Min", "25%", "Mean", "Median", "75%", "Max", "Std", "IQR"
+                ]
+
+                # Ensure only available columns are displayed to avoid KeyErrors
+                available_columns = [col for col in columns_to_display if col in basic_stats_df.index]
+
+                # Transpose the DataFrame so that statistics are along the X-axis and topics along the Y-axis
+                transposed_df = basic_stats_df.loc[available_columns].transpose()
+
+                # Display the transposed DataFrame
+                st.dataframe(transposed_df)
 
                 # Create tabs for different metric visualizations
                 metric_tabs = st.tabs([
@@ -146,33 +160,45 @@ def main():
 
                 with metric_tabs[0]:
                     st.subheader(f"Energy Performance Statistics {category_title}")
-                    # Check if 'IQR' is available before accessing
-                    if 'IQR' in detailed_stats.index:
-                        energy_cols = detailed_stats.loc[
-                            ['Energy Efficiency (kWh/mi)', 'Total Energy (kWh)', 'Avg Energy per Trip (kWh)', 'IQR']
-                        ]
+                    energy_metrics = ['Total Energy Consumption', 'Avg Energy per Trip']
+                    available_energy_metrics = [metric for metric in energy_metrics if metric in transposed_df.index]
+
+                    if available_energy_metrics:
+                        st.dataframe(transposed_df.loc[available_energy_metrics])
                     else:
-                        energy_cols = detailed_stats.loc[
-                            ['Energy Efficiency (kWh/mi)', 'Total Energy (kWh)', 'Avg Energy per Trip (kWh)']
-                        ]
-                    st.dataframe(energy_cols)
+                        st.warning("No energy metrics available.")
 
                 with metric_tabs[1]:
                     st.subheader(f"Distance Statistics {category_title}")
-                    distance_cols = detailed_stats.loc[['Total Distance (mi)', 'Avg Trip Distance (mi)']]
-                    st.dataframe(distance_cols)
+                    distance_metrics = ['Total Distance']
+                    available_distance_metrics = [metric for metric in distance_metrics if
+                                                  metric in transposed_df.index]
+
+                    if available_distance_metrics:
+                        st.dataframe(transposed_df.loc[available_distance_metrics])
+                    else:
+                        st.warning("No distance metrics available.")
 
                 with metric_tabs[2]:
                     st.subheader(f"Temperature Statistics {category_title}")
-                    temp_cols = detailed_stats.loc[
-                        ['Avg Temperature (°F)', 'Min Temperature (°F)', 'Max Temperature (°F)']]
-                    st.dataframe(temp_cols)
+                    temperature_metrics = ['Average Ambient Temperature', 'Min Temperature', 'Max Temperature']
+                    available_temperature_metrics = [metric for metric in temperature_metrics if
+                                                     metric in transposed_df.index]
+
+                    if available_temperature_metrics:
+                        st.dataframe(transposed_df.loc[available_temperature_metrics])
+                    else:
+                        st.warning("No temperature metrics available.")
 
                 with metric_tabs[3]:
                     st.subheader(f"Time and Utilization Statistics {category_title}")
-                    time_cols = detailed_stats.loc[
-                        ['Total Drive Time (hrs)', 'Total Idle Time (hrs)', 'Avg Idle Time (%)']]
-                    st.dataframe(time_cols)
+                    time_metrics = ['Total Trip Time', 'Driving Time', 'Idling Time']
+                    available_time_metrics = [metric for metric in time_metrics if metric in transposed_df.index]
+
+                    if available_time_metrics:
+                        st.dataframe(transposed_df.loc[available_time_metrics])
+                    else:
+                        st.warning("No time metrics available.")
 
                 # Display statistical visualizations
                 st.header(f"Statistical Distributions {category_title}")

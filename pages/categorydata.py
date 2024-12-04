@@ -350,9 +350,19 @@ class CategoryDataAnalyzer:
 
         return agg_stats
 
-    def generate_stats_visualizations(self, stats_df: pd.DataFrame) -> Dict:
+    def generate_stats_visualizations(self, stats: Dict) -> Dict:
         """Generate visualizations for comprehensive statistics"""
         visuals = {}
+
+        # Extract 'basic_stats' from the provided dictionary
+        if 'basic_stats' not in stats:
+            return visuals
+
+        stats_df = stats['basic_stats']
+
+        # Ensure that stats_df is a DataFrame
+        if not isinstance(stats_df, pd.DataFrame) or stats_df.empty:
+            return visuals
 
         # Only consider numeric columns that exist in the stats DataFrame
         available_metrics = [
@@ -362,6 +372,7 @@ class CategoryDataAnalyzer:
             'Avg Idle Time (%)'
         ]
 
+        # Correctly access the index of the DataFrame
         key_metrics = [metric for metric in available_metrics if metric in stats_df.index]
 
         for metric in key_metrics:
@@ -439,6 +450,7 @@ class CategoryDataAnalyzer:
             energy_data,
             x='Average Ambient Temperature',
             y='Energy_Efficiency',
+            # color='Manufacturer' if not manufacturer else 'Weight_Class',
             color='Manufacturer' if not manufacturer else 'Weight_Class',
             title='Temperature Impact on Energy Efficiency',
             labels={'Energy_Efficiency': 'Energy per Mile (kWh/mi)'},
@@ -464,20 +476,9 @@ class CategoryDataAnalyzer:
 
         filtered_data = self.aggregated_data.copy()
         if manufacturer:
-            filtered_data = filtered_data[
-                filtered_data['Manufacturer'].str.lower() == manufacturer.lower()
-                ]
+            filtered_data = filtered_data[filtered_data['Manufacturer'].str.lower() == manufacturer.lower()]
         if weight_class:
-            filtered_data = filtered_data[
-                filtered_data['Weight_Class'] == weight_class
-                ]
-
-        # Add Average Speed to the statistics
-        filtered_data['Average Speed'] = filtered_data.apply(
-            lambda row: row['Total Distance'] / row['Total Trip Time']
-            if row['Total Trip Time'] > 0 else 0,
-            axis=1
-        )
+            filtered_data = filtered_data[filtered_data['Weight_Class'] == weight_class]
 
         numeric_cols = [
             'Total Distance', 'Total Energy Consumption',
@@ -490,20 +491,24 @@ class CategoryDataAnalyzer:
             if col in filtered_data.columns:
                 valid_data = pd.to_numeric(filtered_data[col], errors='coerce').dropna()
                 if not valid_data.empty:
+                    q1 = valid_data.quantile(0.25)
+                    q3 = valid_data.quantile(0.75)
+                    iqr = q3 - q1
                     basic_stats_data[col] = {
                         'Count': len(valid_data),
                         'Mean': valid_data.mean(),
                         'Std': valid_data.std(),
                         'Min': valid_data.min(),
-                        '25%': valid_data.quantile(0.25),
+                        '25%': q1,
                         'Median': valid_data.median(),
-                        '75%': valid_data.quantile(0.75),
+                        '75%': q3,
                         'Max': valid_data.max(),
-                        'IQR': valid_data.quantile(0.75) - valid_data.quantile(0.25)  # Adding IQR calculation
+                        'IQR': iqr
                     }
 
         basic_stats = pd.DataFrame(basic_stats_data)
 
+        # Ensure rounding is applied consistently
         round_dict = {
             'Total Distance': 2,
             'Total Energy Consumption': 2,
@@ -512,7 +517,9 @@ class CategoryDataAnalyzer:
             'Driving Time': 4,
             'Idling Time': 4,
             'Average Speed': 2,
-            'IQR': 2  # Round IQR to 2 decimal places
+            '25%': 2,
+            '75%': 2,
+            'IQR': 2
         }
 
         for col in basic_stats.columns:
