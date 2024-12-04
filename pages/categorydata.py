@@ -47,20 +47,20 @@ class CategoryDataAnalyzer:
 
     def _convert_numeric_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert common numeric columns to proper numeric type"""
-        numeric_columns = [
-            'Total Distance',
-            'Total Energy Consumption',
-            'Average Ambient Temperature',
-            'SOC Used',
-            'Initial SOC',
-            'Final SOC',
-            'Percent Idling Time'
-        ]
+        numeric_columns = {
+            'Total Distance': 2,  # number of decimal places
+            'Total Energy Consumption': 2,
+            'Average Ambient Temperature': 2,
+            'SOC Used': 1,
+            'Initial SOC': 1,
+            'Final SOC': 1,
+            'Percent Idling Time': 0
+        }
 
         df_copy = df.copy()
-        for col in numeric_columns:
+        for col, decimals in numeric_columns.items():
             if col in df_copy.columns:
-                df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce')
+                df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce').round(decimals)
 
         return df_copy
 
@@ -195,6 +195,112 @@ class CategoryDataAnalyzer:
             metrics.append(metric)
 
         return pd.DataFrame(metrics)
+
+    def calculate_detailed_stats(self, manufacturer: Optional[str] = None,
+                                 weight_class: Optional[str] = None) -> pd.DataFrame:
+        """Calculate comprehensive statistics for the selected category"""
+        if self.aggregated_data.empty:
+            return pd.DataFrame()
+
+        filtered_data = self.aggregated_data.copy()
+        if manufacturer:
+            filtered_data = filtered_data[
+                filtered_data['Manufacturer'].str.lower() == manufacturer.lower()
+                ]
+        if weight_class:
+            filtered_data = filtered_data[
+                filtered_data['Weight_Class'] == weight_class
+                ]
+
+        filtered_data = self._convert_numeric_columns(filtered_data)
+
+        # Group metrics by vehicle
+        vehicle_metrics = []
+        for vehicle_id in filtered_data['Vehicle_ID'].unique():
+            vehicle_data = filtered_data[filtered_data['Vehicle_ID'] == vehicle_id]
+
+            try:
+                metrics = {
+                    'Total Trips': len(vehicle_data),
+                    'Total Distance (mi)': vehicle_data['Total Distance'].sum(),
+                    'Avg Trip Distance (mi)': vehicle_data['Total Distance'].mean(),
+                    'Total Energy (kWh)': vehicle_data['Total Energy Consumption'].sum(),
+                    'Avg Energy per Trip (kWh)': vehicle_data['Total Energy Consumption'].mean(),
+                    'Energy Efficiency (kWh/mi)': (vehicle_data['Total Energy Consumption'].sum() /
+                                                   vehicle_data['Total Distance'].sum()) if vehicle_data[
+                                                                                                'Total Distance'].sum() > 0 else 0,
+                    'Avg Temperature (°F)': vehicle_data['Average Ambient Temperature'].mean(),
+                    'Min Temperature (°F)': vehicle_data['Average Ambient Temperature'].min(),
+                    'Max Temperature (°F)': vehicle_data['Average Ambient Temperature'].max(),
+                    'Total Drive Time (hrs)': vehicle_data['Driving Time'].sum(),
+                    'Total Idle Time (hrs)': vehicle_data['Idling Time'].sum(),
+                    'Avg Idle Time (%)': vehicle_data['Percent Idling Time'].mean(),
+                    'Avg Initial SOC (%)': vehicle_data[
+                        'Initial SOC'].mean() if 'Initial SOC' in vehicle_data.columns else None,
+                    'Avg Final SOC (%)': vehicle_data[
+                        'Final SOC'].mean() if 'Final SOC' in vehicle_data.columns else None,
+                    'Avg SOC Used (%)': vehicle_data['SOC Used'].mean() if 'SOC Used' in vehicle_data.columns else None
+                }
+
+                # Remove None values
+                metrics = {k: v for k, v in metrics.items() if v is not None}
+                vehicle_metrics.append(metrics)
+            except Exception as e:
+                print(f"Error calculating metrics for vehicle {vehicle_id}: {e}")
+                continue
+
+        if not vehicle_metrics:
+            return pd.DataFrame()
+
+        # Convert to DataFrame and calculate aggregate statistics
+        metrics_df = pd.DataFrame(vehicle_metrics)
+
+        # Calculate aggregate statistics only for numeric columns
+        numeric_cols = metrics_df.select_dtypes(include=[np.number]).columns
+        agg_stats = pd.DataFrame({
+            'Minimum': metrics_df[numeric_cols].min(),
+            'Maximum': metrics_df[numeric_cols].max(),
+            'Mean': metrics_df[numeric_cols].mean(),
+            'Median': metrics_df[numeric_cols].median(),
+            'Std Dev': metrics_df[numeric_cols].std()
+        }).round(2)
+
+        return agg_stats
+
+    def generate_stats_visualizations(self, stats_df: pd.DataFrame) -> Dict:
+        """Generate visualizations for comprehensive statistics"""
+        visuals = {}
+
+        # Only consider numeric columns that exist in the stats DataFrame
+        available_metrics = [
+            'Energy Efficiency (kWh/mi)',
+            'Avg Trip Distance (mi)',
+            'Avg Temperature (°F)',
+            'Avg Idle Time (%)'
+        ]
+
+        key_metrics = [metric for metric in available_metrics if metric in stats_df.index]
+
+        for metric in key_metrics:
+            try:
+                data = pd.DataFrame({
+                    'Metric': [metric] * 5,
+                    'Statistic': ['Minimum', 'Maximum', 'Mean', 'Median', 'Std Dev'],
+                    'Value': stats_df.loc[metric]
+                })
+
+                visuals[f'{metric.lower().replace(" ", "_").replace("(", "").replace(")", "")}'] = px.bar(
+                    data,
+                    x='Statistic',
+                    y='Value',
+                    title=f'{metric} Statistics',
+                    labels={'Value': metric}
+                )
+            except Exception as e:
+                print(f"Error creating visualization for {metric}: {e}")
+                continue
+
+        return visuals
 
     def generate_visualizations(self, manufacturer: Optional[str] = None, weight_class: Optional[str] = None) -> Dict:
         """Generate visualizations for filtered data"""

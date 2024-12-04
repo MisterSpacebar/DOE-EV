@@ -96,6 +96,54 @@ def main():
                 if summary.get('avg_temperature'):
                     st.metric("Avg Temperature (°F)", f"{summary['avg_temperature']:.1f}")
 
+            # Add comprehensive statistics section
+            st.header("Comprehensive Statistics")
+            detailed_stats = category_analyzer.calculate_detailed_stats(manufacturer_filter, weight_filter)
+
+            if not detailed_stats.empty:
+                # Display the statistics table
+                st.dataframe(detailed_stats)
+
+                # Create tabs for different metric visualizations
+                metric_tabs = st.tabs([
+                    "Energy Metrics",
+                    "Distance Metrics",
+                    "Temperature Metrics",
+                    "Time Metrics"
+                ])
+
+                with metric_tabs[0]:
+                    st.subheader("Energy Performance Statistics")
+                    energy_cols = detailed_stats.loc[
+                        ['Energy Efficiency (kWh/mi)', 'Total Energy (kWh)', 'Avg Energy per Trip (kWh)']]
+                    st.dataframe(energy_cols)
+
+                with metric_tabs[1]:
+                    st.subheader("Distance Statistics")
+                    distance_cols = detailed_stats.loc[['Total Distance (mi)', 'Avg Trip Distance (mi)']]
+                    st.dataframe(distance_cols)
+
+                with metric_tabs[2]:
+                    st.subheader("Temperature Statistics")
+                    temp_cols = detailed_stats.loc[
+                        ['Avg Temperature (°F)', 'Min Temperature (°F)', 'Max Temperature (°F)']]
+                    st.dataframe(temp_cols)
+
+                with metric_tabs[3]:
+                    st.subheader("Time and Utilization Statistics")
+                    time_cols = detailed_stats.loc[
+                        ['Total Drive Time (hrs)', 'Total Idle Time (hrs)', 'Avg Idle Time (%)']]
+                    st.dataframe(time_cols)
+
+                # Display statistical visualizations
+                st.header("Statistical Distributions")
+                stat_visuals = category_analyzer.generate_stats_visualizations(detailed_stats)
+
+                col1, col2 = st.columns(2)
+                for i, (title, fig) in enumerate(stat_visuals.items()):
+                    with col1 if i % 2 == 0 else col2:
+                        st.plotly_chart(fig, use_container_width=True)
+
             # Display visualizations
             st.header("Performance Overview")
             visuals = category_analyzer.generate_visualizations(manufacturer_filter, weight_filter)
@@ -111,6 +159,7 @@ def main():
                     st.plotly_chart(visuals['energy_distance'], use_container_width=True)
                 if 'idle_time' in visuals:
                     st.plotly_chart(visuals['idle_time'], use_container_width=True)
+
 
         elif analysis_type == "Performance Metrics":
             st.header("Detailed Performance Metrics")
