@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import os
 import json
-import plotly.express as px  # Add this
-import plotly.graph_objects as go  # Add this
+import plotly.express as px
 from pages.fleetdata import EVDataAnalyzer
 from pages.vehicledata import VehicleDataAnalyzer
+from pages.categorydata import CategoryDataAnalyzer
 
 # Set page configuration
 st.set_page_config(page_title="EV Data Visualization", layout="wide", page_icon="truck")
@@ -45,13 +45,130 @@ def main():
     st.sidebar.title("Navigation")
     analysis_mode = st.sidebar.radio(
         "Select Analysis Mode",
-        ["Individual Vehicle", "Fleet Analysis"]
+        ["Category Analysis", "Individual Vehicle", "Fleet Analysis"],
+        index=0  # Set Category Analysis as default
     )
 
     st.title("EV Data Visualization Dashboard")
 
-    if analysis_mode == "Individual Vehicle":
-        # Individual vehicle analysis
+    if analysis_mode == "Category Analysis":
+        # Initialize category analyzer
+        category_analyzer = CategoryDataAnalyzer(csv_files, reference_data)
+
+        # Get available categories
+        categories = category_analyzer.get_unique_categories()
+
+        # Category selection
+        st.sidebar.subheader("Filter Options")
+        selected_manufacturer = st.sidebar.selectbox(
+            "Select Manufacturer",
+            ["All"] + categories['manufacturers']
+        )
+        selected_weight_class = st.sidebar.selectbox(
+            "Select Weight Class",
+            ["All"] + categories['weight_classes']
+        )
+
+        # Convert "All" to None for filtering
+        manufacturer_filter = None if selected_manufacturer == "All" else selected_manufacturer
+        weight_filter = None if selected_weight_class == "All" else selected_weight_class
+
+        # Analysis type selection
+        analysis_type = st.sidebar.radio(
+            "Select Analysis Type",
+            ["Overview", "Performance Metrics", "Statistical Analysis"]
+        )
+
+        if analysis_type == "Overview":
+            # Display summary metrics
+            st.header("Category Summary")
+            summary = category_analyzer.get_category_summary(manufacturer_filter, weight_filter)
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Vehicles", summary.get('total_vehicles', 0))
+                st.metric("Total Manufacturers", summary.get('total_manufacturers', 0))
+            with col2:
+                st.metric("Total Distance (mi)", f"{summary.get('total_distance', 0):,.0f}")
+                st.metric("Total Weight Classes", summary.get('total_weight_classes', 0))
+            with col3:
+                st.metric("Total Energy (kWh)", f"{summary.get('total_energy', 0):,.0f}")
+                if summary.get('avg_temperature'):
+                    st.metric("Avg Temperature (°F)", f"{summary['avg_temperature']:.1f}")
+
+            # Display visualizations
+            st.header("Performance Overview")
+            visuals = category_analyzer.generate_visualizations(manufacturer_filter, weight_filter)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if 'efficiency' in visuals:
+                    st.plotly_chart(visuals['efficiency'], use_container_width=True)
+                if 'temperature' in visuals:
+                    st.plotly_chart(visuals['temperature'], use_container_width=True)
+            with col2:
+                if 'energy_distance' in visuals:
+                    st.plotly_chart(visuals['energy_distance'], use_container_width=True)
+                if 'idle_time' in visuals:
+                    st.plotly_chart(visuals['idle_time'], use_container_width=True)
+
+        elif analysis_type == "Performance Metrics":
+            st.header("Detailed Performance Metrics")
+
+            # Calculate and display performance metrics
+            metrics_df = category_analyzer.calculate_performance_metrics(manufacturer_filter, weight_filter)
+            if not metrics_df.empty:
+                st.dataframe(metrics_df)
+
+            # Display trend analysis
+            st.header("Performance Trends")
+            trend_data = category_analyzer.perform_trend_analysis(manufacturer_filter, weight_filter)
+            if trend_data and 'daily_metrics' in trend_data:
+                st.subheader("Daily Performance Metrics")
+                st.line_chart(trend_data['daily_metrics'].set_index('Trip_Date')[
+                                  ['Total Distance', 'Total Energy Consumption']
+                              ])
+
+        else:  # Statistical Analysis
+            st.header("Statistical Analysis")
+
+            # Display statistical summary
+            stats = category_analyzer.calculate_statistical_summary(manufacturer_filter, weight_filter)
+
+            st.subheader("Basic Statistics")
+            if 'basic_stats' in stats:
+                st.dataframe(stats['basic_stats'])
+
+            # Display correlation analysis
+            st.subheader("Correlation Analysis")
+            corr_matrix, heatmap = category_analyzer.calculate_correlations(manufacturer_filter, weight_filter)
+            if heatmap:
+                st.plotly_chart(heatmap, use_container_width=True)
+
+            # Display statistical comparisons
+            st.subheader("Category Comparisons")
+            comparison_results = category_analyzer.perform_category_comparison(
+                "Manufacturer" if not manufacturer_filter else "Weight_Class"
+            )
+            if comparison_results:
+                for metric, results in comparison_results.items():
+                    st.write(f"**{metric}**")
+                    st.write(f"- F-statistic: {results['f_statistic']:.3f}")
+                    st.write(f"- p-value: {results['p_value']:.3f}")
+                    st.write(f"- Effect size (η²): {results['effect_size']:.3f}")
+                    st.write(f"- Statistically significant: {results['significant']}")
+
+            # Display statistical visualizations
+            st.header("Statistical Visualizations")
+            stat_visuals = category_analyzer.generate_statistical_visualizations(
+                manufacturer_filter, weight_filter
+            )
+
+            for title, fig in stat_visuals.items():
+                st.plotly_chart(fig, use_container_width=True)
+
+    elif analysis_mode == "Individual Vehicle":
+        # [Keep existing Individual Vehicle analysis code]
         selected_file = st.sidebar.selectbox(
             "Choose a Vehicle",
             list(csv_files.keys()) if csv_files else []
