@@ -74,9 +74,9 @@ class CategoryDataAnalyzer:
         }
 
         try:
-            # Distance validation
+            # Distance validation (allow smaller distances)
             distance = pd.to_numeric(row['Total Distance'], errors='coerce')
-            validations['valid_distance'] = 0 < distance < 1000
+            validations['valid_distance'] = 0 <= distance < 1000
 
             # Time validation
             drive_time = pd.to_numeric(row['Driving Time'], errors='coerce')
@@ -86,19 +86,30 @@ class CategoryDataAnalyzer:
             validations['valid_times'] = (
                     pd.notnull(drive_time) and drive_time >= 0 and
                     pd.notnull(idle_time) and idle_time >= 0 and
-                    pd.notnull(run_time) and run_time > 0
+                    pd.notnull(run_time) and run_time >= 0
             )
 
-            # Time components validation
+            # Time components validation (increase tolerance to 5%)
             if validations['valid_times']:
                 calculated_total = drive_time + idle_time
-                time_diff_percent = abs(calculated_total - run_time) / run_time * 100
-                validations['matching_times'] = time_diff_percent <= 1
+                if run_time > 0:
+                    time_diff_percent = abs(calculated_total - run_time) / run_time * 100
+                    validations['matching_times'] = time_diff_percent <= 5
+                else:
+                    validations['matching_times'] = calculated_total == 0
 
             # Speed validation
-            if validations['valid_distance'] and validations['valid_times']:
+            if validations['valid_distance'] and validations['valid_times'] and run_time > 0:
                 speed = distance / run_time
-                validations['reasonable_speed'] = 0 < speed <= 80
+                validations['reasonable_speed'] = 0 <= speed <= 80
+
+            # Log specific validation failures
+            if not all(validations.values()):
+                failed_checks = {k: v for k, v in validations.items() if not v}
+                print(f"Row validation failed: {failed_checks}")
+                print(f"Distance: {distance}, Drive Time: {drive_time}, Idle Time: {idle_time}, Run Time: {run_time}")
+                if 'reasonable_speed' in failed_checks and run_time > 0:
+                    print(f"Calculated speed: {distance / run_time} mph")
 
         except Exception as e:
             print(f"Validation error: {e}")
