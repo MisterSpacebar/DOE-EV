@@ -146,8 +146,15 @@ def main():
 
                 with metric_tabs[0]:
                     st.subheader(f"Energy Performance Statistics {category_title}")
-                    energy_cols = detailed_stats.loc[
-                        ['Energy Efficiency (kWh/mi)', 'Total Energy (kWh)', 'Avg Energy per Trip (kWh)']]
+                    # Check if 'IQR' is available before accessing
+                    if 'IQR' in detailed_stats.index:
+                        energy_cols = detailed_stats.loc[
+                            ['Energy Efficiency (kWh/mi)', 'Total Energy (kWh)', 'Avg Energy per Trip (kWh)', 'IQR']
+                        ]
+                    else:
+                        energy_cols = detailed_stats.loc[
+                            ['Energy Efficiency (kWh/mi)', 'Total Energy (kWh)', 'Avg Energy per Trip (kWh)']
+                        ]
                     st.dataframe(energy_cols)
 
                 with metric_tabs[1]:
@@ -218,7 +225,7 @@ def main():
 
             st.subheader("Basic Statistics")
             if 'basic_stats' in stats:
-                st.dataframe(stats['basic_stats'])
+                st.dataframe(stats['basic_stats'])  # This now includes IQR
 
             # Display correlation analysis
             st.subheader("Correlation Analysis")

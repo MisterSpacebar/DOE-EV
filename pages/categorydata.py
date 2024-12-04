@@ -126,7 +126,8 @@ class CategoryDataAnalyzer:
                 df_copy = df.copy()
 
                 # Convert numeric columns
-                numeric_cols = ['Total Distance', 'Total Run Time', 'Driving Time', 'Idling Time']
+                numeric_cols = ['Total Distance', 'Total Run Time', 'Driving Time', 'Idling Time',
+                                'Total Energy Consumption']
                 for col in numeric_cols:
                     if col in df_copy.columns:
                         df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce')
@@ -134,18 +135,24 @@ class CategoryDataAnalyzer:
                 # Add Total Trip Time based on Total Run Time
                 df_copy['Total Trip Time'] = df_copy['Total Run Time']
 
-                # Validate each row
+                # Filter rows with valid data
                 validated_rows = []
                 for _, row in df_copy.iterrows():
                     validations = self.validate_trip_data(row)
                     if all(validations.values()):
-                        row['Average Speed'] = row['Total Distance'] / row['Total Run Time']
-                        validated_rows.append(row)
-                    else:
-                        print(f"Invalid data in {filename}: {validations}")
+                        # Ensure distance is reasonable (> 0.5 miles to avoid inflated ratios)
+                        if row['Total Distance'] > 0.5:
+                            row['Average Speed'] = row['Total Distance'] / row['Total Run Time']
+                            validated_rows.append(row)
 
                 if validated_rows:
                     validated_df = pd.DataFrame(validated_rows)
+
+                    # Calculate Energy Efficiency for each row
+                    validated_df['Energy_Efficiency'] = validated_df['Total Energy Consumption'] / validated_df[
+                        'Total Distance']
+
+                    # Append metadata columns
                     validated_df['Vehicle_ID'] = file_info['vehicle_id']
                     validated_df['Manufacturer'] = file_info['manufacturer']
                     validated_df['Weight_Class'] = file_info['weight_class']
@@ -157,7 +164,29 @@ class CategoryDataAnalyzer:
                 print(f"Error processing {filename}: {e}")
                 continue
 
-        return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+        aggregated_df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+
+        # Filter using z-score or IQR to remove outliers
+        if not aggregated_df.empty:
+            # Use IQR to remove outliers for Energy Efficiency
+            q1 = aggregated_df['Energy_Efficiency'].quantile(0.25)
+            q3 = aggregated_df['Energy_Efficiency'].quantile(0.75)
+            iqr = q3 - q1
+
+            # Define lower and upper bounds for outlier detection
+            lower_bound = q1 - 1.5 * iqr
+            upper_bound = q3 + 1.5 * iqr
+
+            # Filter out rows that fall outside the bounds
+            filtered_df = aggregated_df[
+                (aggregated_df['Energy_Efficiency'] >= lower_bound) & (
+                            aggregated_df['Energy_Efficiency'] <= upper_bound)
+                ]
+
+            print(f"Number of records removed due to outliers: {len(aggregated_df) - len(filtered_df)}")
+            aggregated_df = filtered_df
+
+        return aggregated_df
 
     def get_category_summary(self, manufacturer: Optional[str] = None, weight_class: Optional[str] = None) -> Dict:
         """Generate summary statistics for filtered data"""
@@ -357,28 +386,37 @@ class CategoryDataAnalyzer:
         return visuals
 
     def generate_visualizations(self, manufacturer: Optional[str] = None, weight_class: Optional[str] = None) -> Dict:
-        """Generate visualizations for filtered data"""
         if self.aggregated_data.empty:
             return {}
 
         filtered_data = self.aggregated_data.copy()
         if manufacturer:
-            filtered_data = filtered_data[
-                filtered_data['Manufacturer'].str.lower() == manufacturer.lower()
-                ]
+            filtered_data = filtered_data[filtered_data['Manufacturer'].str.lower() == manufacturer.lower()]
         if weight_class:
-            filtered_data = filtered_data[
-                filtered_data['Weight_Class'] == weight_class
-                ]
+            filtered_data = filtered_data[filtered_data['Weight_Class'] == weight_class]
 
-        filtered_data = self._convert_numeric_columns(filtered_data)
+        # Apply reasonable bounds filtering
+        max_efficiency = 100   # Based on the statistical maximum of ~13 kWh/mi
+
+        energy_data = filtered_data[
+            (filtered_data['Total Energy Consumption'] > 0) &
+            (filtered_data['Total Distance'] > 0)
+            ].copy()
+
+        energy_data['Energy_Efficiency'] = energy_data['Total Energy Consumption'] / energy_data['Total Distance']
+        energy_data = energy_data[energy_data['Energy_Efficiency'] <= max_efficiency]
+
         visuals = {}
 
         # Energy Efficiency by Vehicle
-        metrics_df = self.calculate_performance_metrics(manufacturer, weight_class)
-        if not metrics_df.empty and 'Energy_Efficiency' in metrics_df.columns:
+        vehicle_metrics = energy_data.groupby('Vehicle_ID').agg({
+            'Energy_Efficiency': 'mean',
+            'Manufacturer': 'first'
+        }).reset_index()
+
+        if not vehicle_metrics.empty:
             visuals['efficiency'] = px.bar(
-                metrics_df,
+                vehicle_metrics,
                 x='Vehicle_ID',
                 y='Energy_Efficiency',
                 color='Manufacturer',
@@ -387,31 +425,31 @@ class CategoryDataAnalyzer:
             )
 
         # Distance vs Energy Scatter
-        if all(col in filtered_data.columns for col in ['Total Distance', 'Total Energy Consumption']):
-            visuals['energy_distance'] = px.scatter(
-                filtered_data,
-                x='Total Distance',
-                y='Total Energy Consumption',
-                color='Manufacturer' if not manufacturer else 'Weight_Class',
-                title='Energy Consumption vs Distance',
-                trendline='ols'
-            )
+        visuals['energy_distance'] = px.scatter(
+            energy_data,
+            x='Total Distance',
+            y='Total Energy Consumption',
+            color='Manufacturer' if not manufacturer else 'Weight_Class',
+            title='Energy Consumption vs Distance',
+            trendline='ols'
+        )
 
-        # Temperature Impact
-        if 'Average Ambient Temperature' in filtered_data.columns:
-            visuals['temperature'] = px.scatter(
-                filtered_data,
-                x='Average Ambient Temperature',
-                y='Total Energy Consumption',
-                color='Manufacturer' if not manufacturer else 'Weight_Class',
-                title='Temperature Impact on Energy Consumption',
-                trendline='ols'
-            )
+        # Calculate per-trip efficiency for temperature impact
+        visuals['temperature'] = px.scatter(
+            energy_data,
+            x='Average Ambient Temperature',
+            y='Energy_Efficiency',
+            color='Manufacturer' if not manufacturer else 'Weight_Class',
+            title='Temperature Impact on Energy Efficiency',
+            labels={'Energy_Efficiency': 'Energy per Mile (kWh/mi)'},
+            trendline='ols'
+        )
 
         # Idle Time Analysis
         if 'Percent Idling Time' in filtered_data.columns:
+            idle_data = filtered_data[filtered_data['Percent Idling Time'] <= 100]
             visuals['idle_time'] = px.box(
-                filtered_data,
+                idle_data,
                 x='Manufacturer' if not manufacturer else 'Weight_Class',
                 y='Percent Idling Time',
                 title='Idle Time Distribution'
@@ -460,7 +498,8 @@ class CategoryDataAnalyzer:
                         '25%': valid_data.quantile(0.25),
                         'Median': valid_data.median(),
                         '75%': valid_data.quantile(0.75),
-                        'Max': valid_data.max()
+                        'Max': valid_data.max(),
+                        'IQR': valid_data.quantile(0.75) - valid_data.quantile(0.25)  # Adding IQR calculation
                     }
 
         basic_stats = pd.DataFrame(basic_stats_data)
@@ -472,7 +511,8 @@ class CategoryDataAnalyzer:
             'Total Trip Time': 4,
             'Driving Time': 4,
             'Idling Time': 4,
-            'Average Speed': 2
+            'Average Speed': 2,
+            'IQR': 2  # Round IQR to 2 decimal places
         }
 
         for col in basic_stats.columns:
